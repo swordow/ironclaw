@@ -1880,6 +1880,8 @@ mod tests {
         let result = super::coerce_params_to_schema(params, &schema);
         // Should remain as string since it can't be parsed
         assert_eq!(result["count"], serde_json::json!("not-a-number"));
+    }
+
     // === Programmatic Tool Calling (PTC) integration tests ===
     //
     // These tests require the test-ptc WASM binary to be pre-built:
