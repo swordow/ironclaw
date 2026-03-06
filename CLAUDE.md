@@ -52,7 +52,7 @@ cargo test --test heartbeat_integration
 # Run E2E tests (Python/Playwright — requires a running ironclaw instance)
 # See tests/e2e/CLAUDE.md for full setup instructions
 cd tests/e2e
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
 playwright install chromium
 pytest scenarios/                    # all scenarios
@@ -79,27 +79,7 @@ src/
 │   └── secrets.rs, hygiene.rs, builder.rs, helpers.rs
 ├── error.rs            # Error types (thiserror)
 │
-├── agent/              # Core agent logic (see src/agent/CLAUDE.md)
-│   ├── agent_loop.rs   # Main Agent struct, message handling loop
-│   ├── dispatcher.rs   # Agentic loop: LLM call → tool execution → repeat
-│   ├── thread_ops.rs   # Thread/session ops: undo/redo, approval, auth interception
-│   ├── commands.rs     # System command handlers (/help, /model, /status, etc.)
-│   ├── router.rs       # MessageIntent classification (explicit /commands only)
-│   ├── scheduler.rs    # Parallel job scheduling
-│   ├── worker.rs       # Per-job execution with LLM reasoning
-│   ├── self_repair.rs  # Stuck job detection and recovery
-│   ├── heartbeat.rs    # Proactive periodic execution
-│   ├── session.rs      # Session/thread/turn model with state machine
-│   ├── session_manager.rs # Thread/session lifecycle management
-│   ├── compaction.rs   # Context window management with turn summarization
-│   ├── context_monitor.rs # Memory pressure detection
-│   ├── cost_guard.rs   # LLM spend and action-rate enforcement (daily budget, hourly cap)
-│   ├── job_monitor.rs  # Forwards Claude Code container output back to agent loop
-│   ├── undo.rs         # Turn-based undo/redo with checkpoints
-│   ├── submission.rs   # Submission parsing (undo, redo, compact, clear, etc.)
-│   ├── task.rs         # Sub-task execution framework
-│   ├── routine.rs      # Routine types (Trigger, Action, Guardrails)
-│   └── routine_engine.rs # Routine execution (cron ticker, event matcher)
+├── agent/              # Core agent loop, dispatcher, scheduler, sessions — see src/agent/CLAUDE.md
 │
 ├── channels/           # Multi-channel input
 │   ├── channel.rs      # Channel trait, IncomingMessage, OutgoingResponse
@@ -115,16 +95,6 @@ src/
 │   ├── webhook_server.rs # Unified HTTP server composing all webhook routes
 │   ├── repl.rs         # Simple REPL (for testing)
 │   ├── web/            # Web gateway (browser UI) — see src/channels/web/CLAUDE.md
-│   │   ├── mod.rs      # Gateway builder, startup
-│   │   ├── server.rs   # Axum router, 40+ API endpoints
-│   │   ├── sse.rs      # SSE broadcast manager
-│   │   ├── ws.rs       # WebSocket gateway + connection tracking
-│   │   ├── types.rs    # Request/response types, SseEvent enum
-│   │   ├── auth.rs     # Bearer token auth middleware
-│   │   ├── log_layer.rs # Tracing layer for log streaming
-│   │   ├── openai_compat.rs # OpenAI-compatible proxy (/v1/chat/completions, /v1/models)
-│   │   ├── handlers/   # Handler functions split by domain (jobs, skills, extensions, etc.)
-│   │   └── static/     # HTML, CSS, JS (single-page app)
 │   └── wasm/           # WASM channel runtime
 │       ├── mod.rs
 │       ├── bundled.rs  # Bundled channel discovery
@@ -196,18 +166,7 @@ src/
 │   ├── leak_detector.rs # Secret detection (API keys, tokens, etc.)
 │   └── credential_detect.rs # HTTP request credential detection (headers, URL params)
 │
-├── llm/                # LLM integration (multi-provider)
-│   ├── mod.rs          # Provider factory, LlmBackend enum
-│   ├── provider.rs     # LlmProvider trait, message types
-│   ├── nearai_chat.rs  # NEAR AI Chat Completions provider (session token + API key auth)
-│   ├── reasoning.rs    # Planning, tool selection, evaluation
-│   ├── session.rs      # Session token management with auto-renewal
-│   ├── circuit_breaker.rs # Circuit breaker for provider failures
-│   ├── retry.rs        # Retry with exponential backoff
-│   ├── failover.rs     # Multi-provider failover chain
-│   ├── response_cache.rs # LLM response caching
-│   ├── costs.rs        # Token cost tracking
-│   └── rig_adapter.rs  # Rig framework adapter
+├── llm/                # Multi-provider LLM integration — see src/llm/CLAUDE.md
 │
 ├── tools/              # Extensible tool system
 │   ├── tool.rs         # Tool trait, ToolOutput, ToolError
@@ -250,19 +209,7 @@ src/
 │       ├── error.rs    # WASM-specific error types
 │       └── storage.rs  # Linear memory persistence
 │
-├── db/                 # Database abstraction layer
-│   ├── mod.rs          # Database supertrait + 6 sub-traits (~67 async methods)
-│   ├── postgres.rs     # PostgreSQL backend (delegates to Store + Repository)
-│   ├── libsql_migrations.rs # SQLite-dialect schema (idempotent)
-│   └── libsql/         # libSQL/Turso backend (embedded SQLite)
-│       ├── mod.rs      # LibSqlBackend struct, connection helpers, row parsing
-│       ├── conversations.rs # ConversationStore impl
-│       ├── jobs.rs     # JobStore impl
-│       ├── sandbox.rs  # SandboxStore impl
-│       ├── routines.rs # RoutineStore impl
-│       ├── settings.rs # SettingsStore impl
-│       ├── tool_failures.rs # ToolFailureStore impl
-│       └── workspace.rs # WorkspaceStore impl (FTS5 + vector search)
+├── db/                 # Dual-backend persistence (PostgreSQL + libSQL) — see src/db/CLAUDE.md
 │
 ├── workspace/          # Persistent memory system (OpenClaw-inspired)
 │   ├── mod.rs          # Workspace struct, memory operations
@@ -301,6 +248,7 @@ src/
 │
 ├── secrets/            # Secrets management
 │   ├── mod.rs          # SecretsStore trait, public API
+│   ├── types.rs        # Core types (Secret, SecretRef, SecretMetadata)
 │   ├── crypto.rs       # AES-256-GCM encryption
 │   ├── keychain.rs     # OS keychain integration (macOS Keychain, GNOME Keyring) for master key
 │   └── store.rs        # Encrypted secret storage
@@ -348,7 +296,7 @@ When designing new features or systems, always prefer generic/extensible archite
 - Use `RwLock` for concurrent read/write access
 
 ### Traits for Extensibility
-- `Database` - Add new database backends (must implement all ~60 methods)
+- `Database` - Add new database backends (must implement all ~78 methods)
 - `Channel` - Add new input sources
 - `Tool` - Add new capabilities
 - `LlmProvider` - Add new LLM backends
@@ -527,94 +475,20 @@ OBSERVABILITY_BACKEND=none             # none/noop (default) or log
 
 ### LLM Providers
 
-IronClaw supports multiple LLM backends via the `LLM_BACKEND` env var: `nearai` (default), `openai`, `anthropic`, `ollama`, `openai_compatible`, and `tinfoil`.
-
-**NEAR AI** -- Uses the Chat Completions API with dual auth support. Session token auth (default): authenticates with session tokens (`sess_xxx`) obtained via browser OAuth (GitHub/Google), base URL defaults to `https://private.near.ai`. API key auth: set `NEARAI_API_KEY` (from `cloud.near.ai`), base URL defaults to `https://cloud-api.near.ai`. Both modes use the same Chat Completions endpoint. Tool messages are flattened to plain text for compatibility. Set `NEARAI_SESSION_TOKEN` env var for hosting providers that inject tokens via environment.
-
-**NEAR AI Cloud** -- Uses the OpenAI-compatible Chat Completions API (`https://cloud-api.near.ai/v1/chat/completions`). Authenticates with API keys from `cloud.near.ai`. Auto-selected when `NEARAI_API_KEY` is set (or explicitly via `NEARAI_API_MODE=chat_completions`). Tool messages are flattened to plain text for compatibility. Configure with `NEARAI_API_KEY` and `NEARAI_BASE_URL` (default: `https://cloud-api.near.ai`).
-
-**OpenAI-compatible** -- Any endpoint that speaks the OpenAI API (vLLM, LiteLLM, OpenRouter, etc.). Configure with `LLM_BASE_URL`, `LLM_API_KEY` (optional), `LLM_MODEL`. Set `LLM_EXTRA_HEADERS` to inject custom HTTP headers into every request (format: `Key:Value,Key2:Value2`), useful for OpenRouter attribution headers like `HTTP-Referer` and `X-Title`.
-
-**Tinfoil** -- Private inference via `https://inference.tinfoil.sh/v1`. Runs models inside hardware-attested TEEs so neither Tinfoil nor the cloud provider can see prompts or responses. Uses the OpenAI-compatible Chat Completions API. Configure with `TINFOIL_API_KEY` and `TINFOIL_MODEL` (default: `kimi-k2-5`).
+Backends: `nearai` (default), `openai`, `anthropic`, `ollama`, `openai_compatible`, `tinfoil` — set via `LLM_BACKEND`. See [src/llm/CLAUDE.md](src/llm/CLAUDE.md) for per-provider auth and configuration details.
 
 ## Database
 
-IronClaw supports two database backends, selected at compile time via Cargo feature flags and at runtime via the `DATABASE_BACKEND` environment variable.
+Dual-backend persistence (PostgreSQL + libSQL/Turso). **All new persistence features must support both backends** — see [src/db/CLAUDE.md](src/db/CLAUDE.md) for schema, SQL dialect differences, adding operations, and libSQL limitations.
 
-**IMPORTANT: All new features that touch persistence MUST support both backends.** Implement the operation as a method on the `Database` trait in `src/db/mod.rs`, then add the implementation in both `src/db/postgres.rs` (delegate to Store/Repository) and `src/db/libsql/mod.rs` (native SQL).
-
-### Backends
-
-| Backend | Feature Flag | Default | Use Case |
-|---------|-------------|---------|----------|
-| PostgreSQL | `postgres` (default) | Yes | Production, existing deployments |
-| libSQL/Turso | `libsql` | No | Zero-dependency local mode, edge, Turso cloud |
-
+Implement every new operation in both `src/db/postgres.rs` and `src/db/libsql/mod.rs`. Test in isolation:
 ```bash
-# Build with PostgreSQL only (default)
-cargo build
-
-# Build with libSQL only
-cargo build --no-default-features --features libsql
-
-# Build with both backends available
-cargo build --features "postgres,libsql"
+cargo check                                          # postgres (default)
+cargo check --no-default-features --features libsql  # libsql only
+cargo check --all-features                           # both
 ```
 
-### Database Trait
-
-The `Database` trait (`src/db/mod.rs`) defines ~60 async methods covering all persistence:
-- Conversations, messages, metadata
-- Jobs, actions, LLM calls, estimation snapshots
-- Sandbox jobs, job events
-- Routines, routine runs
-- Tool failures, settings
-- Workspace: documents, chunks, hybrid search
-
-Both backends implement this trait. PostgreSQL delegates to the existing `Store` + `Repository`. libSQL implements native SQLite-dialect SQL.
-
-### Schema
-
-**PostgreSQL:** `migrations/V1__initial.sql` (351 lines). Uses pgvector for embeddings, tsvector for FTS, PL/pgSQL functions. Managed by `refinery`.
-
-**libSQL:** `src/db/libsql_migrations.rs` (consolidated schema, ~480 lines). Translates PG types:
-- `UUID` -> `TEXT`, `TIMESTAMPTZ` -> `TEXT` (ISO-8601), `JSONB` -> `TEXT`
-- `VECTOR(1536)` -> `F32_BLOB(1536)` with `libsql_vector_idx`
-- `tsvector`/`ts_rank_cd` -> FTS5 virtual table with sync triggers
-- PL/pgSQL functions -> SQLite triggers
-
-**Tables (both backends):**
-
-**Core:**
-- `conversations` - Multi-channel conversation tracking
-- `agent_jobs` - Job metadata and status
-- `job_actions` - Event-sourced tool executions
-- `dynamic_tools` - Agent-built tools
-- `llm_calls` - Cost tracking
-- `estimation_snapshots` - Learning data
-
-**Workspace/Memory:**
-- `memory_documents` - Flexible path-based files (e.g., "context/vision.md", "daily/2024-01-15.md")
-- `memory_chunks` - Chunked content with FTS and vector indexes
-- `heartbeat_state` - Periodic execution tracking
-
-**Other:**
-- `routines`, `routine_runs` - Scheduled/reactive execution
-- `settings` - Per-user key-value settings
-- `tool_failures` - Self-repair tracking
-- `secrets`, `wasm_tools`, `tool_capabilities` - Extension infrastructure
-
 Database configuration: see Configuration section above.
-
-### Current Limitations (libSQL backend)
-
-- **Workspace/memory system** not yet wired through Database trait (requires Store migration)
-- **Secrets store** not yet available (still requires PostgresSecretsStore)
-- **Hybrid search** uses FTS5 only (vector search via libsql_vector_idx not yet implemented)
-- **Settings reload from DB** skipped (Config::from_db requires Store)
-- No incremental migration versioning (schema is CREATE IF NOT EXISTS, no ALTER TABLE support yet)
-- **No encryption at rest** -- The local SQLite database file stores conversation content, job data, workspace memory, and other application data in plaintext. Only secrets (API tokens, credentials) are encrypted via AES-256-GCM before storage. Users handling sensitive data should use full-disk encryption (FileVault, LUKS, BitLocker) or consider the PostgreSQL backend with TDE/encrypted storage.
-- **JSON merge patch vs path-targeted update** -- The libSQL backend uses RFC 7396 JSON Merge Patch (`json_patch`) for metadata updates, while PostgreSQL uses path-targeted `jsonb_set`. Merge patch replaces top-level keys entirely, which may drop nested keys not present in the patch. Callers should avoid relying on partial nested object updates in metadata fields.
 
 ## Safety Layer
 

@@ -24,7 +24,7 @@ cargo check --all-features                            # both
 
 | File | Role |
 |------|------|
-| `mod.rs` | `Database` supertrait + 6 sub-traits (~67 async methods total) — add new ops here first |
+| `mod.rs` | `Database` supertrait + 7 sub-traits (~78 async methods total) — add new ops here first |
 | `postgres.rs` | PostgreSQL backend — delegates to `Store` + `Repository` in `history/` |
 | `libsql/mod.rs` | libSQL/Turso backend struct, connection helpers, row parsing utilities |
 | `libsql/conversations.rs` | `ConversationStore` impl |
@@ -35,19 +35,20 @@ cargo check --all-features                            # both
 | `libsql/tool_failures.rs` | `ToolFailureStore` impl |
 | `libsql/workspace.rs` | `WorkspaceStore` impl (FTS5 + vector search) |
 | `libsql_migrations.rs` | Consolidated libSQL schema (CREATE IF NOT EXISTS, no ALTER TABLE) |
+| `tls.rs` | TLS connector factory for PostgreSQL (`rustls` + system root certs) |
 
 PostgreSQL schema: `migrations/V1__initial.sql` through `V9__flexible_embedding_dimension.sql` (managed by `refinery`). V1 is the base schema; later migrations add tables, columns, and rename `claude_code_events` → `job_events`.
 
 ## Trait Structure
 
-The `Database` supertrait is composed of six sub-traits. Leaf consumers can depend on the narrowest sub-trait they need rather than the full `Database`:
+The `Database` supertrait is composed of seven sub-traits. Leaf consumers can depend on the narrowest sub-trait they need rather than the full `Database`:
 
 | Sub-trait | Methods | Covers |
 |-----------|---------|--------|
-| `ConversationStore` | 11 | Conversations, messages |
-| `JobStore` | 14 | Agent jobs, actions, LLM calls, estimation |
+| `ConversationStore` | 12 | Conversations, messages |
+| `JobStore` | 13 | Agent jobs, actions, LLM calls, estimation |
 | `SandboxStore` | 13 | Sandbox jobs, job events |
-| `RoutineStore` | 14 | Routines, routine runs |
+| `RoutineStore` | 15 | Routines, routine runs |
 | `ToolFailureStore` | 4 | Self-repair tracking |
 | `SettingsStore` | 8 | Per-user key-value settings |
 | `WorkspaceStore` | 13 | Memory documents, chunks, hybrid search |
