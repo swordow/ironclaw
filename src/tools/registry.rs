@@ -20,7 +20,7 @@ use crate::tools::builtin::{
     JobStatusTool, JsonTool, ListDirTool, ListJobsTool, MemoryReadTool, MemorySearchTool,
     MemoryTreeTool, MemoryWriteTool, PromptQueue, ReadFileTool, ShellTool, SkillInstallTool,
     SkillListTool, SkillRemoveTool, SkillSearchTool, TimeTool, ToolActivateTool, ToolAuthTool,
-    ToolInstallTool, ToolListTool, ToolRemoveTool, ToolSearchTool, WebFetchTool, WriteFileTool,
+    ToolInstallTool, ToolListTool, ToolRemoveTool, ToolSearchTool, WriteFileTool,
 };
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::{Tool, ToolDomain};
@@ -69,7 +69,6 @@ const PROTECTED_TOOL_NAMES: &[&str] = &[
     "skill_install",
     "skill_remove",
     "message",
-    "web_fetch",
 ];
 
 /// Registry of available tools.
@@ -231,7 +230,6 @@ impl ToolRegistry {
             http = http.with_credentials(Arc::clone(cr), Arc::clone(ss));
         }
         self.register_sync(Arc::new(http));
-        self.register_sync(Arc::new(WebFetchTool::new()));
 
         tracing::info!("Registered {} built-in tools", self.count());
     }

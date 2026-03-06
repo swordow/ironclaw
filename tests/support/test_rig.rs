@@ -451,7 +451,13 @@ impl TestRigBuilder {
         let session = Arc::new(SessionManager::new(SessionConfig::default()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
 
-        // 4. Create TraceLlm + InstrumentedLlm.
+        // 4. Create TraceLlm + InstrumentedLlm, extract HTTP exchanges for replay.
+        let http_exchanges = self
+            .trace
+            .as_ref()
+            .map(|t| t.http_exchanges.clone())
+            .unwrap_or_default();
+
         let base_llm: Arc<dyn LlmProvider> = if let Some(llm) = self.llm {
             llm
         } else if let Some(trace) = self.trace {
@@ -505,11 +511,19 @@ impl TestRigBuilder {
             hooks: components.hooks,
             cost_guard: components.cost_guard,
             sse_tx: None,
-            http_interceptor: if self.http_exchanges.is_empty() {
-                None
-            } else {
-                Some(Arc::new(ReplayingHttpInterceptor::new(self.http_exchanges))
-                    as Arc<dyn ironclaw::llm::recording::HttpInterceptor>)
+            http_interceptor: {
+                // Prefer explicit exchanges from with_http_exchanges(), fall back to trace.
+                let exchanges = if self.http_exchanges.is_empty() {
+                    http_exchanges
+                } else {
+                    self.http_exchanges
+                };
+                if exchanges.is_empty() {
+                    None
+                } else {
+                    Some(Arc::new(ReplayingHttpInterceptor::new(exchanges))
+                        as Arc<dyn ironclaw::llm::recording::HttpInterceptor>)
+                }
             },
         };
 
