@@ -111,6 +111,7 @@ mod tests {
             ws,
             notify_tx,
             None,
+            false,
         ));
 
         // Insert a cron routine with next_fire_at in the past.
@@ -177,6 +178,7 @@ mod tests {
             ws,
             notify_tx,
             None,
+            false,
         ));
 
         // Insert an event routine matching "deploy.*production".
@@ -263,6 +265,7 @@ mod tests {
             ws,
             notify_tx,
             None,
+            false,
         ));
 
         // Insert an event routine with 1-hour cooldown.

@@ -577,6 +577,7 @@ impl TestRigBuilder {
                     Arc::clone(ws),
                     notify_tx,
                     None,
+                    false,
                 ));
                 components
                     .tools
@@ -624,6 +625,7 @@ impl TestRigBuilder {
             },
             transcription: None,
             document_extraction: None,
+            sandbox_available: false,
         };
 
         // 7. Create TestChannel and ChannelManager.
