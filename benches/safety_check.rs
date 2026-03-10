@@ -94,14 +94,15 @@ fn bench_leak_detector(c: &mut Criterion) {
         b.iter(|| detector.scan_and_clean(black_box(clean_content)))
     });
 
+    let headers = vec![
+        ("Content-Type".to_string(), "application/json".to_string()),
+        ("Accept".to_string(), "text/html".to_string()),
+    ];
     group.bench_function("http_request_scan", |b| {
         b.iter(|| {
             detector.scan_http_request(
                 "https://api.example.com/data?query=hello",
-                &[
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                    ("Accept".to_string(), "text/html".to_string()),
-                ],
+                black_box(&headers),
                 Some(b"{\"query\": \"hello world\"}"),
             )
         })

@@ -68,11 +68,11 @@ fn bench_json_tool_params(c: &mut Criterion) {
     }"#;
 
     group.bench_function("parse_simple", |b| {
-        b.iter(|| serde_json::from_str::<serde_json::Value>(black_box(simple_params)))
+        b.iter(|| serde_json::from_str::<serde_json::Value>(black_box(simple_params)).unwrap())
     });
 
     group.bench_function("parse_complex", |b| {
-        b.iter(|| serde_json::from_str::<serde_json::Value>(black_box(complex_params)))
+        b.iter(|| serde_json::from_str::<serde_json::Value>(black_box(complex_params)).unwrap())
     });
 
     group.finish();
