@@ -22,10 +22,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
-    - name: Install cargo-deny
-      run: cargo install cargo-deny
     - name: Run cargo deny
-      run: cargo deny check
+      uses: EmbarkStudios/cargo-deny-action@v2
 
   clippy:
     name: Clippy (${{ matrix.name }})
