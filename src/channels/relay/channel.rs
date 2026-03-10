@@ -352,11 +352,8 @@ impl Channel for RelayChannel {
                     Err(e) => {
                         tracing::warn!(
                             error = %e,
-                            backoff_ms = backoff_ms,
-                            "Could not verify team connection, applying backoff"
+                            "Could not verify team connection, will retry next iteration"
                         );
-                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
-                        backoff_ms = (backoff_ms * 2).min(backoff_max_ms);
                     }
                 }
             }

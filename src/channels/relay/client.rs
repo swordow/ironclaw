@@ -345,7 +345,7 @@ async fn parse_sse_stream(
 ) {
     use futures::StreamExt;
 
-    let mut buffer = String::new();
+    let mut buffer = Vec::<u8>::new();
     let mut event_type = String::new();
     let mut data_lines = Vec::new();
 
@@ -359,12 +359,15 @@ async fn parse_sse_stream(
             }
         };
 
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        buffer.extend_from_slice(&chunk);
 
-        // Process complete lines
-        while let Some(newline_pos) = buffer.find('\n') {
-            let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-            buffer = buffer[newline_pos + 1..].to_string();
+        // Process complete lines (decode UTF-8 only on full lines to avoid
+        // corruption when multi-byte characters span chunk boundaries)
+        while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buffer[..newline_pos])
+                .trim_end_matches('\r')
+                .to_string();
+            buffer.drain(..=newline_pos);
 
             if line.is_empty() {
                 // Blank line = end of event
@@ -514,5 +517,33 @@ mod tests {
         assert!(make(event_types::MESSAGE).is_message());
         assert!(make(event_types::DIRECT_MESSAGE).is_message());
         assert!(make(event_types::MENTION).is_message());
+    }
+
+    #[tokio::test]
+    async fn parse_sse_handles_multibyte_utf8_across_chunks() {
+        // The crab emoji (🦀) is 4 bytes: [0xF0, 0x9F, 0xA6, 0x80].
+        // Split it across two chunks to verify no U+FFFD corruption.
+        let event_json = r#"{"event_type":"message","content":"hello 🦀 world","provider_scope":"T1","channel_id":"C1","sender_id":"U1"}"#;
+        let full = format!("event: message\ndata: {}\n\n", event_json);
+        let bytes = full.as_bytes();
+
+        // Find the crab emoji and split mid-character
+        let crab_pos = bytes
+            .windows(4)
+            .position(|w| w == [0xF0, 0x9F, 0xA6, 0x80])
+            .expect("crab emoji not found");
+        let split_at = crab_pos + 2; // split in the middle of the 4-byte emoji
+
+        let chunk1 = bytes::Bytes::copy_from_slice(&bytes[..split_at]);
+        let chunk2 = bytes::Bytes::copy_from_slice(&bytes[split_at..]);
+
+        let chunks: Vec<Result<bytes::Bytes, reqwest::Error>> = vec![Ok(chunk1), Ok(chunk2)];
+        let stream = futures::stream::iter(chunks);
+
+        let (tx, mut rx) = mpsc::channel(8);
+        parse_sse_stream(stream, tx).await;
+
+        let event = rx.recv().await.expect("should receive event");
+        assert_eq!(event.text(), "hello 🦀 world");
     }
 }

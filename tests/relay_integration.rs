@@ -233,6 +233,76 @@ fn test_relay_client_new_succeeds() {
     assert!(client.is_ok());
 }
 
+// ── SSE UTF-8 chunk boundary ────────────────────────────────────────────
+
+/// Verify that multi-byte UTF-8 characters split across SSE chunks are
+/// not corrupted (no U+FFFD replacement characters).
+#[tokio::test]
+async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let sent = std::sync::Arc::new(AtomicBool::new(false));
+    let sent_clone = sent.clone();
+
+    let app = Router::new().route(
+        "/stream",
+        get(move |_: Query<std::collections::HashMap<String, String>>| {
+            let sent = sent_clone.clone();
+            async move {
+                // Build SSE payload with emoji that will be split mid-character
+                let event_data = serde_json::json!({
+                    "event_type": "message",
+                    "provider": "slack",
+                    "provider_scope": "T1",
+                    "channel_id": "C1",
+                    "sender_id": "U1",
+                    "content": "hello 🦀 world"
+                });
+                let payload = format!("event: message\ndata: {}\n\n", event_data);
+                let bytes = payload.into_bytes();
+
+                // Split in the middle of the 4-byte crab emoji
+                let crab_pos = bytes
+                    .windows(4)
+                    .position(|w| w == [0xF0, 0x9F, 0xA6, 0x80])
+                    .unwrap();
+                let split_at = crab_pos + 2;
+
+                let chunk1 = bytes[..split_at].to_vec();
+                let chunk2 = bytes[split_at..].to_vec();
+
+                sent.store(true, Ordering::SeqCst);
+
+                let events = vec![
+                    Ok::<_, Infallible>(axum::body::Bytes::from(chunk1)),
+                    Ok(axum::body::Bytes::from(chunk2)),
+                ];
+
+                axum::response::Response::builder()
+                    .header("content-type", "text/event-stream")
+                    .body(axum::body::Body::from_stream(stream::iter(events)))
+                    .unwrap()
+            }
+        }),
+    );
+
+    let base_url = start_server(app).await;
+    let client = test_client(&base_url);
+
+    let (mut event_stream, handle) = client.connect_stream("tok", 30).await.unwrap();
+
+    use futures::StreamExt;
+    let event = event_stream.next().await.expect("should get event");
+    assert_eq!(
+        event.text(),
+        "hello 🦀 world",
+        "emoji should not be corrupted"
+    );
+    assert!(sent.load(Ordering::SeqCst));
+
+    handle.abort();
+}
+
 // ── Channel event field validation ──────────────────────────────────────
 
 #[test]
