@@ -34,12 +34,25 @@ echo "==> delta lint: checking changed lines since $(echo "$BASE" | head -c 10).
 DIFF_OUT=$(mktemp "${TMPDIR:-/tmp}/ironclaw-diff.XXXXXX")
 git diff --unified=0 "$BASE" -- '*.rs' > "$DIFF_OUT"
 
-# Run clippy with JSON output
+# Run clippy with JSON output (stderr shows compilation progress/errors)
 CLIPPY_OUT=$(mktemp "${TMPDIR:-/tmp}/ironclaw-clippy.XXXXXX")
-cargo clippy --all-targets --message-format=json -- -D warnings > "$CLIPPY_OUT" 2>/dev/null || true
+CLIPPY_STDERR=$(mktemp "${TMPDIR:-/tmp}/ironclaw-clippy-err.XXXXXX")
+cargo clippy --locked --all-targets --message-format=json -- -D warnings > "$CLIPPY_OUT" 2>"$CLIPPY_STDERR" || true
+
+# Show compilation errors if clippy produced no JSON output
+if [ ! -s "$CLIPPY_OUT" ] && [ -s "$CLIPPY_STDERR" ]; then
+    echo "ERROR: clippy failed to produce output. Compilation errors:"
+    cat "$CLIPPY_STDERR"
+    rm -f "$CLIPPY_STDERR"
+    exit 1
+fi
+rm -f "$CLIPPY_STDERR"
+
+# Get repo root for path normalization in Python
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # Filter clippy diagnostics against changed line ranges
-python3 - "$DIFF_OUT" "$CLIPPY_OUT" <<'PYEOF'
+python3 - "$DIFF_OUT" "$CLIPPY_OUT" "$REPO_ROOT" <<'PYEOF'
 import json
 import re
 import sys
@@ -69,17 +82,16 @@ def parse_diff(diff_path):
                 changed[current_file].append([start, end])
     return changed
 
-def normalize_path(path):
+def normalize_path(path, repo_root):
     """Normalize absolute path to relative (from repo root)."""
     if os.path.isabs(path):
-        cwd = os.getcwd()
-        if path.startswith(cwd):
-            return os.path.relpath(path, cwd)
+        if path.startswith(repo_root):
+            return os.path.relpath(path, repo_root)
     return path
 
-def in_changed_range(file_path, line, changed_ranges):
+def in_changed_range(file_path, line, changed_ranges, repo_root):
     """Check if file:line falls within any changed range."""
-    rel = normalize_path(file_path)
+    rel = normalize_path(file_path, repo_root)
     ranges = changed_ranges.get(rel)
     if not ranges:
         return False
@@ -88,6 +100,7 @@ def in_changed_range(file_path, line, changed_ranges):
 def main():
     diff_path = sys.argv[1]
     clippy_path = sys.argv[2]
+    repo_root = sys.argv[3]
 
     changed_ranges = parse_diff(diff_path)
 
@@ -129,7 +142,7 @@ def main():
             line_start = primary.get("line_start", 0)
             rendered = cm.get("rendered", "").strip()
 
-            if in_changed_range(file_name, line_start, changed_ranges):
+            if in_changed_range(file_name, line_start, changed_ranges, repo_root):
                 blocking.append(rendered)
             else:
                 baseline.append(rendered)
