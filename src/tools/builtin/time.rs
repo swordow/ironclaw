@@ -95,10 +95,6 @@ impl Tool for TimeTool {
     fn requires_sanitization(&self) -> bool {
         false // Internal tool, no external data
     }
-
-    fn is_idempotent(&self) -> bool {
-        true
-    }
 }
 
 fn execute_now(

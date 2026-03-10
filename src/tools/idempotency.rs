@@ -116,15 +116,36 @@ impl ToolIdempotencyCache {
     }
 
     /// Build a deterministic cache key from job_id, tool name, and params.
+    ///
+    /// JSON object keys are sorted recursively to ensure order-independent
+    /// hashing (`{"a":1,"b":2}` and `{"b":2,"a":1}` produce the same key).
     fn cache_key(job_id: &str, tool_name: &str, params: &serde_json::Value) -> String {
         let mut hasher = Sha256::new();
         hasher.update(tool_name.as_bytes());
         hasher.update(b":");
-        // Canonical JSON via serde_json::to_string (keys are sorted in serde_json maps)
-        let params_str = serde_json::to_string(params).unwrap_or_default();
+        let canonical = Self::canonicalize(params);
+        let params_str = serde_json::to_string(&canonical).unwrap_or_default();
         hasher.update(params_str.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
         format!("{}:{}:{}", job_id, tool_name, hash)
+    }
+
+    /// Recursively sort JSON object keys for canonical serialization.
+    fn canonicalize(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut sorted: std::collections::BTreeMap<String, serde_json::Value> =
+                    std::collections::BTreeMap::new();
+                for (k, v) in map {
+                    sorted.insert(k.clone(), Self::canonicalize(v));
+                }
+                serde_json::Value::Object(sorted.into_iter().collect())
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(Self::canonicalize).collect())
+            }
+            other => other.clone(),
+        }
     }
 }
 
@@ -256,6 +277,31 @@ mod tests {
             ToolIdempotencyCache::cache_key("j1", "echo", &serde_json::json!({"a": 1, "b": 2}));
         let key2 =
             ToolIdempotencyCache::cache_key("j1", "echo", &serde_json::json!({"a": 1, "b": 2}));
+        assert_eq!(key1, key2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_key_order_independent() {
+        // JSON objects with different key insertion order must produce the same cache key
+        let key1 =
+            ToolIdempotencyCache::cache_key("j1", "echo", &serde_json::json!({"a": 1, "b": 2}));
+        let key2 =
+            ToolIdempotencyCache::cache_key("j1", "echo", &serde_json::json!({"b": 2, "a": 1}));
+        assert_eq!(key1, key2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_key_nested_order_independent() {
+        let key1 = ToolIdempotencyCache::cache_key(
+            "j1",
+            "tool",
+            &serde_json::json!({"x": {"c": 3, "d": 4}, "y": 1}),
+        );
+        let key2 = ToolIdempotencyCache::cache_key(
+            "j1",
+            "tool",
+            &serde_json::json!({"y": 1, "x": {"d": 4, "c": 3}}),
+        );
         assert_eq!(key1, key2);
     }
 

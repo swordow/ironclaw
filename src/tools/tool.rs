@@ -312,13 +312,21 @@ pub trait Tool: Send + Sync {
         &[]
     }
 
-    /// Whether this tool produces the same output for the same input.
+    /// Whether this tool is a pure function of its input parameters.
     ///
-    /// Idempotent tools (read-only, pure functions) can have their results cached
-    /// to avoid re-execution when the LLM re-requests the same tool with identical
-    /// arguments (common during self-repair recovery or retry loops).
+    /// A tool marked idempotent must produce the same output for the same input
+    /// regardless of when it is called — no dependency on external mutable state
+    /// (filesystem, time, database, network) and no side effects.
     ///
-    /// Default: `false`. Override to return `true` for read-only tools.
+    /// Results of idempotent tools are cached to avoid re-execution when the LLM
+    /// re-requests the same tool with identical arguments (common during
+    /// self-repair recovery or retry loops).
+    ///
+    /// Examples: `echo` (returns input), `json` (parse/format).
+    /// Counter-examples: `read_file` (filesystem changes), `time` (clock),
+    /// `memory_search` (workspace mutations), `list_jobs` (job state changes).
+    ///
+    /// Default: `false`. Override to return `true` only for pure functions.
     fn is_idempotent(&self) -> bool {
         false
     }

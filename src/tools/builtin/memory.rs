@@ -114,10 +114,6 @@ impl Tool for MemorySearchTool {
     fn requires_sanitization(&self) -> bool {
         false // Internal memory, trusted content
     }
-
-    fn is_idempotent(&self) -> bool {
-        true
-    }
 }
 
 /// Tool for writing to workspace memory.
@@ -381,10 +377,6 @@ impl Tool for MemoryReadTool {
     fn requires_sanitization(&self) -> bool {
         false // Internal memory
     }
-
-    fn is_idempotent(&self) -> bool {
-        true
-    }
 }
 
 /// Tool for viewing workspace structure as a tree.
@@ -503,10 +495,6 @@ impl Tool for MemoryTreeTool {
 
     fn requires_sanitization(&self) -> bool {
         false // Internal tool
-    }
-
-    fn is_idempotent(&self) -> bool {
-        true
     }
 }
 

@@ -170,10 +170,6 @@ impl Tool for ReadFileTool {
         true // File content could contain anything
     }
 
-    fn is_idempotent(&self) -> bool {
-        true
-    }
-
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
     }
@@ -399,10 +395,6 @@ impl Tool for ListDirTool {
 
     fn requires_sanitization(&self) -> bool {
         false // Directory listings are safe
-    }
-
-    fn is_idempotent(&self) -> bool {
-        true
     }
 
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {

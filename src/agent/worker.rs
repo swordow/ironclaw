@@ -746,21 +746,7 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                     name: tool_name.to_string(),
                 })?;
 
-        // Check idempotency cache before any expensive work
         let job_id_str = job_id.to_string();
-        if tool.is_idempotent()
-            && let Some(cached) = deps
-                .idempotency_cache
-                .get(&job_id_str, tool_name, params)
-                .await
-        {
-            tracing::debug!(
-                tool = %tool_name,
-                job = %job_id,
-                "Idempotency cache hit"
-            );
-            return Ok(cached);
-        }
 
         // Check approval: use context-aware check if available, else block all non-Never tools
         let requirement = tool.requires_approval(params);
@@ -855,6 +841,22 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
                 reason: format!("Invalid tool parameters: {}", details),
             }
             .into());
+        }
+
+        // Check idempotency cache after approval/hooks/validation so those
+        // checks always run. Uses post-hook params for consistency with put().
+        if tool.is_idempotent()
+            && let Some(cached) = deps
+                .idempotency_cache
+                .get(&job_id_str, tool_name, &params)
+                .await
+        {
+            tracing::debug!(
+                tool = %tool_name,
+                job = %job_id,
+                "Idempotency cache hit"
+            );
+            return Ok(cached);
         }
 
         // Redact sensitive parameter values (e.g. secret_save's "value") before

@@ -896,10 +896,6 @@ impl Tool for ListJobsTool {
     fn requires_sanitization(&self) -> bool {
         false
     }
-
-    fn is_idempotent(&self) -> bool {
-        true
-    }
 }
 
 /// Tool for checking job status.
@@ -978,10 +974,6 @@ impl Tool for JobStatusTool {
 
     fn requires_sanitization(&self) -> bool {
         false
-    }
-
-    fn is_idempotent(&self) -> bool {
-        true
     }
 }
 
