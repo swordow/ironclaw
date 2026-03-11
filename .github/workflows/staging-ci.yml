@@ -107,6 +107,7 @@ jobs:
     outputs:
       pr_number: ${{ steps.create-pr.outputs.pr_number }}
       promotion_branch: ${{ steps.branch.outputs.branch }}
+      commit_summary: ${{ steps.create-pr.outputs.commit_summary }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -183,6 +184,16 @@ jobs:
           BRANCH="${{ steps.branch.outputs.branch }}"
           BASE="${{ steps.find-base.outputs.base }}"
 
+          # Enumerate commits in this batch (exclude merge commits)
+          COMMIT_LIST=$(git log --oneline --no-merges --reverse "${RANGE}" 2>/dev/null || echo "")
+          if [ -n "$COMMIT_LIST" ]; then
+            COMMIT_COUNT=$(echo "$COMMIT_LIST" | wc -l | tr -d ' ')
+            COMMIT_MD=$(echo "$COMMIT_LIST" | sed 's/^/- /')
+          else
+            COMMIT_COUNT=0
+            COMMIT_MD="- (no non-merge commits in range)"
+          fi
+
           PR_URL=$(gh pr create \
             --base "$BASE" \
             --head "$BRANCH" \
@@ -193,6 +204,9 @@ jobs:
           **Promotion branch:** \`${BRANCH}\`
           **Base:** \`${BASE}\`
           **Triggered by:** Staging CI batch at ${TIMESTAMP}
+
+          ### Commits in this batch (${COMMIT_COUNT}):
+          ${COMMIT_MD}
 
           Waiting for gates:
           - Tests: pending
@@ -206,6 +220,14 @@ jobs:
           PR_NUM=$(echo "$PR_URL" | grep -oE '[0-9]+$')
           echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
           echo "Created promotion PR #${PR_NUM}"
+
+          # Output commit summary for use in merge commit message
+          {
+            echo "commit_summary<<COMMIT_SUMMARY_DELIM"
+            echo "Commits in this batch (${COMMIT_COUNT}):"
+            echo "${COMMIT_MD}"
+            echo "COMMIT_SUMMARY_DELIM"
+          } >> "$GITHUB_OUTPUT"
 
   # ── Gate: wait for review, process findings, merge or block ─────
   gate:
@@ -416,12 +438,18 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           PR_NUMBER: ${{ needs.create-promotion-pr.outputs.pr_number }}
+          COMMIT_SUMMARY: ${{ needs.create-promotion-pr.outputs.commit_summary }}
         run: |
           if [ -n "$PR_NUMBER" ]; then
             BASE=$(gh pr view "$PR_NUMBER" --json baseRefName --jq '.baseRefName')
             if [ "$BASE" = "main" ]; then
               echo "Merging promotion PR #${PR_NUMBER} (targets main)"
-              gh pr merge "$PR_NUMBER" --merge
+              TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title')
+              if [ -n "$COMMIT_SUMMARY" ]; then
+                gh pr merge "$PR_NUMBER" --merge --subject "$TITLE" --body "$COMMIT_SUMMARY"
+              else
+                gh pr merge "$PR_NUMBER" --merge
+              fi
               echo "merged=true" >> "$GITHUB_OUTPUT"
             else
               echo "PR #${PR_NUMBER} targets '${BASE}' (not main) — leaving open for chain resolution"
