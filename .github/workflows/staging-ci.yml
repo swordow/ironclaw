@@ -184,11 +184,18 @@ jobs:
           BRANCH="${{ steps.branch.outputs.branch }}"
           BASE="${{ steps.find-base.outputs.base }}"
 
-          # Enumerate commits in this batch (exclude merge commits)
+          # Enumerate commits in this batch (exclude merge commits, cap at 50)
+          MAX_COMMITS=50
           COMMIT_LIST=$(git log --oneline --no-merges --reverse "${RANGE}" 2>/dev/null || echo "")
           if [ -n "$COMMIT_LIST" ]; then
             COMMIT_COUNT=$(echo "$COMMIT_LIST" | wc -l | tr -d ' ')
-            COMMIT_MD=$(echo "$COMMIT_LIST" | sed 's/^/- /')
+            if [ "$COMMIT_COUNT" -gt "$MAX_COMMITS" ]; then
+              COMMIT_MD=$(echo "$COMMIT_LIST" | head -n "$MAX_COMMITS" | sed 's/^/- /')
+              COMMIT_MD="${COMMIT_MD}
+- ... and $((COMMIT_COUNT - MAX_COMMITS)) more (see compare view)"
+            else
+              COMMIT_MD=$(echo "$COMMIT_LIST" | sed 's/^/- /')
+            fi
           else
             COMMIT_COUNT=0
             COMMIT_MD="- (no non-merge commits in range)"
@@ -452,7 +459,7 @@ EOF
               echo "Merging promotion PR #${PR_NUMBER} (targets main)"
               TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title')
               if [ -n "$COMMIT_SUMMARY" ]; then
-                gh pr merge "$PR_NUMBER" --merge --subject "$TITLE" --body "$COMMIT_SUMMARY"
+                gh pr merge "$PR_NUMBER" --merge --subject "#${PR_NUMBER} $TITLE" --body "$COMMIT_SUMMARY"
               else
                 gh pr merge "$PR_NUMBER" --merge
               fi
