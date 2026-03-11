@@ -734,10 +734,7 @@ mod tests {
             "method": "GET",
             "url": "https://api.example.com/data"
         });
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Never
-        );
+        assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Never);
     }
 
     #[test]
@@ -837,10 +834,7 @@ mod tests {
             "url": "https://example.com",
             "headers": {"Content-Type": "application/json", "Accept": "text/html"}
         });
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Never
-        );
+        assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Never);
     }
 
     #[test]
@@ -853,10 +847,7 @@ mod tests {
             "url": "https://example.com",
             "headers": {}
         });
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Never
-        );
+        assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Never);
 
         // Empty array
         let params = serde_json::json!({
@@ -864,10 +855,7 @@ mod tests {
             "url": "https://example.com",
             "headers": []
         });
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Never
-        );
+        assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Never);
     }
 
     // ── Credential registry approval tests ─────────────────────────────
@@ -909,10 +897,7 @@ mod tests {
             "method": "GET",
             "url": "https://api.example.com/data"
         });
-        assert_eq!(
-            tool.requires_approval(&params),
-            ApprovalRequirement::Never
-        );
+        assert_eq!(tool.requires_approval(&params), ApprovalRequirement::Never);
     }
 
     #[test]
