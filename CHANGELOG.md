@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0](https://github.com/nearai/ironclaw/compare/v0.18.0...v0.19.0) - 2026-03-11
+
+### Added
+
+- *(i18n)* Add internationalization support with Chinese and English translations ([#929](https://github.com/nearai/ironclaw/pull/929))
+- Import OpenClaw memory, history and settings ([#903](https://github.com/nearai/ironclaw/pull/903))
+
+### Fixed
+
+- *(ci)* improve Claude Code review reliability ([#955](https://github.com/nearai/ironclaw/pull/955))
+- *(ci)* run gated test jobs during staging CI ([#956](https://github.com/nearai/ironclaw/pull/956))
+- *(ci)* prevent staging-ci tag failure and chained PR auto-close ([#900](https://github.com/nearai/ironclaw/pull/900))
+- *(ci)* WASM WIT compat sqlite3 duplicate symbol conflict ([#953](https://github.com/nearai/ironclaw/pull/953))
+- resolve deferred review items from PRs #883, #848, #788 ([#915](https://github.com/nearai/ironclaw/pull/915))
+- *(web)* improve UX readability and accessibility in chat UI ([#910](https://github.com/nearai/ironclaw/pull/910))
+
+### Other
+
+- Merge pull request #917 from nearai/staging-promote/369741fc-22935740447
+- Add generic host-verified /webhook/tools/{tool} ingress ([#757](https://github.com/nearai/ironclaw/pull/757))
+
 ## [0.18.0](https://github.com/nearai/ironclaw/compare/v0.17.0...v0.18.0) - 2026-03-11
 
 ### Other
