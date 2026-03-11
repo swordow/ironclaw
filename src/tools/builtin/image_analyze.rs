@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn test_requires_approval_returns_unless_auto_approved() {
+    fn test_requires_approval_returns_never() {
         let tool = ImageAnalyzeTool::new(
             "https://api.example.com".to_string(),
             "test-key".to_string(),

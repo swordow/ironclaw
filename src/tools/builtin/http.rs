@@ -596,9 +596,10 @@ impl Tool for HttpTool {
             return ApprovalRequirement::Always;
         }
 
-        // GET requests (or missing method, since GET is the default) are low-risk
-        let method = params["method"].as_str().unwrap_or("GET");
-        if method.eq_ignore_ascii_case("GET") {
+        // GET requests are low-risk reads; method is required by schema,
+        // but fall back to UnlessAutoApproved if somehow absent.
+        let method = params["method"].as_str();
+        if method.is_some_and(|m| m.eq_ignore_ascii_case("GET")) {
             return ApprovalRequirement::Never;
         }
 
