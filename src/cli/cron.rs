@@ -300,6 +300,8 @@ async fn create(
     cooldown_secs: u64,
     notify_channel: Option<String>,
 ) -> anyhow::Result<()> {
+    validate_timezone_arg(timezone)?;
+
     // Validate the cron expression by computing next fire.
     let next_fire = next_cron_fire(schedule, timezone)
         .map_err(|e| anyhow::anyhow!("Invalid cron schedule: {e}"))?;
@@ -374,6 +376,7 @@ async fn edit(
     cooldown: Option<u64>,
 ) -> anyhow::Result<()> {
     let mut routine = require_cron_routine(db, user_id, name).await?;
+    validate_timezone_arg(timezone)?;
 
     let mut changed = false;
 
@@ -630,6 +633,15 @@ fn validate_cron_trigger(routine: &Routine) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_timezone_arg(timezone: Option<&str>) -> anyhow::Result<()> {
+    if let Some(tz) = timezone
+        && crate::timezone::parse_timezone(tz).is_none()
+    {
+        anyhow::bail!("Invalid timezone: '{tz}' is not a valid IANA timezone");
+    }
+    Ok(())
+}
+
 // ── Helpers ─────────────────────────────────────────────────
 
 /// Format a datetime relative to now (e.g. "in 2h", "3m ago").
@@ -818,5 +830,24 @@ mod tests {
         let routine = make_routine("run-once", Trigger::Manual);
         let err = validate_cron_trigger(&routine).unwrap_err();
         assert!(err.contains("manual"), "expected 'manual' in error: {err}");
+    }
+
+    #[test]
+    fn validate_timezone_arg_accepts_none() {
+        assert!(validate_timezone_arg(None).is_ok());
+    }
+
+    #[test]
+    fn validate_timezone_arg_accepts_valid_iana_timezone() {
+        assert!(validate_timezone_arg(Some("America/New_York")).is_ok());
+    }
+
+    #[test]
+    fn validate_timezone_arg_rejects_invalid_timezone() {
+        let err = validate_timezone_arg(Some("Not/AZone"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Invalid timezone"), "got: {err}");
+        assert!(err.contains("Not/AZone"), "got: {err}");
     }
 }
