@@ -2271,21 +2271,15 @@ mod tests {
         let msg = IncomingMessage::new("slack-relay", "u1", "hello")
             .with_metadata(serde_json::json!({ "event_type": "message" }));
         let is_relay = msg.channel.ends_with("-relay");
-        let is_dm = msg
-            .metadata
-            .get("event_type")
-            .and_then(|v| v.as_str())
-            == Some("direct_message");
+        let is_dm =
+            msg.metadata.get("event_type").and_then(|v| v.as_str()) == Some("direct_message");
         assert!(is_relay && !is_dm, "Should auto-deny in relay non-DM");
 
         // Case 2: relay channel + DM → should NOT auto-deny
         let msg_dm = IncomingMessage::new("slack-relay", "u1", "hello")
             .with_metadata(serde_json::json!({ "event_type": "direct_message" }));
-        let is_dm_2 = msg_dm
-            .metadata
-            .get("event_type")
-            .and_then(|v| v.as_str())
-            == Some("direct_message");
+        let is_dm_2 =
+            msg_dm.metadata.get("event_type").and_then(|v| v.as_str()) == Some("direct_message");
         assert!(
             !msg_dm.channel.ends_with("-relay") || is_dm_2,
             "Should NOT auto-deny in relay DM"
