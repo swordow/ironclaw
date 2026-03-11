@@ -90,8 +90,8 @@ jobs:
             echo "One or more jobs failed"
             exit 1
           fi
-          # clippy-windows only runs on main PRs, so skip/success are both acceptable
-          if [[ "${{ needs.clippy-windows.result }}" == "failure" ]]; then
-            echo "Windows clippy failed"
+          # clippy-windows only runs on main PRs, so skipped is acceptable but failure is not
+          if [[ "${{ needs.clippy-windows.result }}" != "success" && "${{ needs.clippy-windows.result }}" != "skipped" ]]; then
+            echo "Windows clippy failed: ${{ needs.clippy-windows.result }}"
             exit 1
           fi
