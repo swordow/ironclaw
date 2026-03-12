@@ -2785,11 +2785,17 @@ impl ExtensionManager {
         .await
         .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
 
-        // Try to list and create tools
-        let mcp_tools = client
-            .list_tools()
-            .await
-            .map_err(|e| ExtensionError::ActivationFailed(e.to_string()))?;
+        // Try to list and create tools.
+        // A 401/auth error means the server requires OAuth — surface as
+        // AuthRequired so the activate handler triggers the OAuth flow.
+        let mcp_tools = client.list_tools().await.map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("requires authentication") || msg.contains("401") {
+                ExtensionError::AuthRequired
+            } else {
+                ExtensionError::ActivationFailed(msg)
+            }
+        })?;
 
         let tool_impls = client
             .create_tools()
