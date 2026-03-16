@@ -704,10 +704,9 @@ fn normalize_mcp_tool_arguments(tool_name: &str, value: serde_json::Value) -> se
         .get("ui_lang")
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
+        && (ui_lang.is_empty() || !ui_lang.contains('-'))
     {
-        if ui_lang.is_empty() || !ui_lang.contains('-') {
-            map.remove("ui_lang");
-        }
+        map.remove("ui_lang");
     }
 
     if let Some(freshness) = map
