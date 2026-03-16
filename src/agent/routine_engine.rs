@@ -1296,7 +1296,7 @@ pub fn spawn_cron_ticker(
             engine.check_cron_triggers().await;
 
             refresh_counter += 1;
-            if refresh_counter % refresh_every == 0 {
+            if refresh_counter.is_multiple_of(refresh_every) {
                 engine.refresh_event_cache().await;
             }
         }
