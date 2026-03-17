@@ -68,6 +68,14 @@ pub async fn settings_set_handler(
         .store
         .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    // Guard: cannot remove a custom provider that is currently active.
+    if key == "llm_custom_providers" {
+        if let Err(status) = guard_active_provider_not_removed(store, &state.user_id, &body.value).await {
+            return Err(status);
+        }
+    }
+
     store
         .set_setting(&state.user_id, &key, &body.value)
         .await
@@ -77,6 +85,60 @@ pub async fn settings_set_handler(
         })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Returns `Err(409)` if the active `llm_backend` is a custom provider that
+/// would be removed by the incoming update to `llm_custom_providers`.
+async fn guard_active_provider_not_removed(
+    store: &Arc<dyn crate::db::Database>,
+    user_id: &str,
+    new_value: &serde_json::Value,
+) -> Result<(), StatusCode> {
+    // Get the currently active backend.
+    let active_backend = match store.get_setting(user_id, "llm_backend").await {
+        Ok(Some(v)) => match v.as_str() {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+
+    // Parse the incoming provider list.
+    let new_providers: Vec<serde_json::Value> = match new_value.as_array() {
+        Some(arr) => arr.clone(),
+        None => return Ok(()),
+    };
+
+    // Check whether the active backend exists in the OLD custom providers list.
+    let old_providers_value = match store.get_setting(user_id, "llm_custom_providers").await {
+        Ok(Some(v)) => v,
+        _ => return Ok(()),
+    };
+    let old_providers: Vec<serde_json::Value> = match old_providers_value.as_array() {
+        Some(arr) => arr.clone(),
+        None => return Ok(()),
+    };
+
+    let active_was_custom = old_providers.iter().any(|p| {
+        p.get("id").and_then(|v| v.as_str()) == Some(&active_backend)
+    });
+    if !active_was_custom {
+        return Ok(());
+    }
+
+    // Reject if the active provider is absent from the new list.
+    let still_present = new_providers.iter().any(|p| {
+        p.get("id").and_then(|v| v.as_str()) == Some(&active_backend)
+    });
+    if !still_present {
+        tracing::warn!(
+            active_backend = %active_backend,
+            "Rejected attempt to delete the active custom LLM provider"
+        );
+        return Err(StatusCode::CONFLICT);
+    }
+
+    Ok(())
 }
 
 pub async fn settings_delete_handler(

@@ -31,6 +31,7 @@ I18n.register('en', {
   'tab.routines': 'Routines',
   'tab.extensions': 'Extensions',
   'tab.skills': 'Skills',
+  'tab.config': 'Config',
   'tab.logs': 'Logs',
   
   // Status
@@ -340,6 +341,34 @@ I18n.register('en', {
   'ext.removed': 'Removed {name}',
   'ext.installFailed': 'Install failed: {message}',
   
+  // Config Tab — Model Providers
+  'config.modelProviders': 'Model Providers',
+  'config.addProvider': '+ Add Provider',
+  'config.newProvider': 'New Provider',
+  'config.restartNotice': 'Changes take effect after restart.',
+  'config.builtin': 'built-in',
+  'config.useProvider': 'Use',
+  'config.providerName': 'Display Name',
+  'config.providerNamePlaceholder': 'My Provider',
+  'config.providerId': 'Provider ID',
+  'config.providerIdPlaceholder': 'my-provider',
+  'config.providerIdHint': 'Lowercase letters, numbers, hyphens',
+  'config.providerAdapter': 'API Adapter',
+  'config.adapterOpenAI': 'OpenAI Compatible',
+  'config.adapterAnthropic': 'Anthropic',
+  'config.adapterOllama': 'Ollama',
+  'config.providerBaseUrl': 'Base URL',
+  'config.providerApiKey': 'API Key',
+  'config.providerModel': 'Default Model',
+  'config.providerActivated': 'Switched to {name} (restart to apply)',
+  'config.providerAdded': 'Added provider "{name}" (restart to apply)',
+  'config.providerDeleted': 'Provider deleted',
+  'config.confirmDeleteProvider': 'Delete provider "{id}"?',
+  'config.cannotDeleteActiveProvider': 'Cannot delete the active provider. Switch to another provider first.',
+  'config.providerFieldsRequired': 'Display name and Provider ID are required',
+  'config.providerIdInvalid': 'Provider ID: use only lowercase letters, numbers, hyphens',
+  'config.providerIdTaken': 'Provider ID "{id}" is already taken',
+
   // Configure
   'config.title': 'Configure {name}',
   'config.telegramOwnerHint': 'After saving, IronClaw will show a one-time code. Send `/start CODE` to your bot in Telegram and IronClaw will finish setup automatically.',

@@ -1884,6 +1884,7 @@ function switchTab(tab) {
     stopPairingPoll();
   }
   if (tab === 'skills') loadSkills();
+  if (tab === 'config') loadConfig();
 }
 
 // --- Memory (filesystem tree) ---
@@ -4679,9 +4680,247 @@ document.addEventListener('click', function(e) {
     case 'switch-language':
       if (typeof switchLanguage === 'function') switchLanguage(el.dataset.lang);
       break;
+    case 'set-active-provider':
+      setActiveProvider(el.dataset.id);
+      break;
+    case 'delete-custom-provider':
+      deleteCustomProvider(el.dataset.id);
+      break;
   }
 });
 
 document.getElementById('language-btn').addEventListener('click', function() {
   if (typeof toggleLanguageMenu === 'function') toggleLanguageMenu();
+});
+
+// --- Config Tab ---
+
+// Like apiFetch but for endpoints that return 204 No Content
+function apiFetchVoid(path, options) {
+  const opts = options || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Authorization'] = 'Bearer ' + token;
+  if (opts.body && typeof opts.body === 'object') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  return fetch(path, opts).then((res) => {
+    if (!res.ok) {
+      return res.text().then((body) => { throw new Error(body || (res.status + ' ' + res.statusText)); });
+    }
+  });
+}
+
+// Generated from providers.json + nearai/bedrock (handled separately in llm.rs)
+const BUILTIN_PROVIDERS = [
+  { id: 'nearai',            name: 'NEAR AI',           adapter: 'nearai',                base_url: 'https://api.near.ai/v1',                                   builtin: true },
+  { id: 'openai',            name: 'OpenAI',            adapter: 'open_ai_completions',   base_url: 'https://api.openai.com/v1',                                builtin: true },
+  { id: 'anthropic',         name: 'Anthropic',         adapter: 'anthropic',             base_url: 'https://api.anthropic.com',                                builtin: true },
+  { id: 'ollama',            name: 'Ollama',            adapter: 'ollama',                base_url: 'http://localhost:11434',                                    builtin: true },
+  { id: 'openai_compatible', name: 'OpenAI Compatible', adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true },
+  { id: 'gemini',            name: 'Google Gemini',     adapter: 'open_ai_completions',   base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',   builtin: true },
+  { id: 'groq',              name: 'Groq',              adapter: 'open_ai_completions',   base_url: 'https://api.groq.com/openai/v1',                           builtin: true },
+  { id: 'openrouter',        name: 'OpenRouter',        adapter: 'open_ai_completions',   base_url: 'https://openrouter.ai/api/v1',                             builtin: true },
+  { id: 'deepseek',          name: 'DeepSeek',          adapter: 'open_ai_completions',   base_url: 'https://api.deepseek.com/v1',                              builtin: true },
+  { id: 'mistral',           name: 'Mistral',           adapter: 'open_ai_completions',   base_url: 'https://api.mistral.ai/v1',                                builtin: true },
+  { id: 'tinfoil',           name: 'Tinfoil',           adapter: 'open_ai_completions',   base_url: 'https://inference.tinfoil.sh/v1',                          builtin: true },
+  { id: 'nvidia',            name: 'NVIDIA NIM',        adapter: 'open_ai_completions',   base_url: 'https://integrate.api.nvidia.com/v1',                      builtin: true },
+  { id: 'together',          name: 'Together AI',       adapter: 'open_ai_completions',   base_url: 'https://api.together.xyz/v1',                              builtin: true },
+  { id: 'fireworks',         name: 'Fireworks AI',      adapter: 'open_ai_completions',   base_url: 'https://api.fireworks.ai/inference/v1',                    builtin: true },
+  { id: 'cerebras',          name: 'Cerebras',          adapter: 'open_ai_completions',   base_url: 'https://api.cerebras.ai/v1',                               builtin: true },
+  { id: 'sambanova',         name: 'SambaNova',         adapter: 'open_ai_completions',   base_url: 'https://api.sambanova.ai/v1',                              builtin: true },
+  { id: 'zai',               name: 'Z.AI',              adapter: 'open_ai_completions',   base_url: 'https://api.z.ai/api/paas/v4',                             builtin: true },
+  { id: 'venice',            name: 'Venice.ai',         adapter: 'open_ai_completions',   base_url: 'https://api.venice.ai/api/v1',                             builtin: true },
+  { id: 'minimax',           name: 'MiniMax',           adapter: 'open_ai_completions',   base_url: 'https://api.minimax.io/v1',                                builtin: true },
+  { id: 'ionet',             name: 'io.net',            adapter: 'open_ai_completions',   base_url: 'https://api.intelligence.io.solutions/api/v1',             builtin: true },
+  { id: 'cloudflare',        name: 'Cloudflare AI',     adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true },
+  { id: 'yandex',            name: 'Yandex AI Studio',  adapter: 'open_ai_completions',   base_url: 'https://ai.api.cloud.yandex.net/v1',                       builtin: true },
+  { id: 'bedrock',           name: 'AWS Bedrock',       adapter: 'bedrock',               base_url: '',                                                         builtin: true },
+];
+
+const ADAPTER_LABELS = {
+  open_ai_completions: 'OpenAI Compatible',
+  anthropic: 'Anthropic',
+  ollama: 'Ollama',
+  bedrock: 'AWS Bedrock',
+  nearai: 'NEAR AI',
+};
+
+let _customProviders = [];
+let _activeLlmBackend = '';
+let _configLoaded = false;
+
+function loadConfig() {
+  const list = document.getElementById('providers-list');
+  list.innerHTML = '<div class="empty-state">' + I18n.t('common.loading') + '</div>';
+
+  apiFetch('/api/settings/export').then((d) => {
+    const s = (d && d.settings) ? d.settings : {};
+    _activeLlmBackend = s['llm_backend'] ? String(s['llm_backend']) : 'nearai';
+    try {
+      const val = s['llm_custom_providers'];
+      _customProviders = Array.isArray(val) ? val : (val ? JSON.parse(val) : []);
+    } catch (e) {
+      _customProviders = [];
+    }
+    _configLoaded = true;
+    renderProviders();
+  }).catch(() => {
+    _activeLlmBackend = 'nearai';
+    _customProviders = [];
+    _configLoaded = true;
+    renderProviders();
+  });
+}
+
+function renderProviders() {
+  const list = document.getElementById('providers-list');
+  const allProviders = [...BUILTIN_PROVIDERS, ..._customProviders].sort((a, b) => {
+    if (a.id === _activeLlmBackend) return -1;
+    if (b.id === _activeLlmBackend) return 1;
+    return 0;
+  });
+
+  if (allProviders.length === 0) {
+    list.innerHTML = '<div class="empty-state">No providers</div>';
+    return;
+  }
+
+  list.innerHTML = allProviders.map((p) => {
+    const isActive = p.id === _activeLlmBackend;
+    const adapterLabel = ADAPTER_LABELS[p.adapter] || p.adapter;
+    const activeBadge = isActive
+      ? '<span class="provider-badge provider-badge-active">' + I18n.t('status.active') + '</span>'
+      : '';
+    const builtinBadge = p.builtin
+      ? '<span class="provider-badge provider-badge-builtin">' + I18n.t('config.builtin') + '</span>'
+      : '';
+    const deleteBtn = !p.builtin && !isActive
+      ? '<button class="provider-action-btn provider-delete-btn" data-action="delete-custom-provider" data-id="' + escHtml(p.id) + '">' + I18n.t('common.delete') + '</button>'
+      : '';
+    const useBtn = !isActive
+      ? '<button class="provider-action-btn" data-action="set-active-provider" data-id="' + escHtml(p.id) + '">' + I18n.t('config.useProvider') + '</button>'
+      : '';
+    const baseUrlText = p.base_url
+      ? '<span class="provider-url">' + escHtml(p.base_url) + '</span>'
+      : '';
+
+    return '<div class="provider-card' + (isActive ? ' provider-card-active' : '') + '">'
+      + '<div class="provider-card-header">'
+      +   '<span class="provider-name">' + escHtml(p.name || p.id) + '</span>'
+      +   '<span class="provider-id-label">' + escHtml(p.id) + '</span>'
+      +   activeBadge + builtinBadge
+      + '</div>'
+      + '<div class="provider-card-meta">'
+      +   '<span class="provider-adapter">' + escHtml(adapterLabel) + '</span>'
+      +   baseUrlText
+      + '</div>'
+      + '<div class="provider-card-actions">'
+      +   useBtn + deleteBtn
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setActiveProvider(id) {
+  apiFetchVoid('/api/settings/llm_backend', { method: 'PUT', body: { value: id } })
+    .then(() => apiFetchVoid('/api/settings/selected_model', { method: 'DELETE' }))
+    .then(() => {
+      _activeLlmBackend = id;
+      renderProviders();
+      document.getElementById('providers-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('config-restart-notice').style.display = 'flex';
+      showToast(I18n.t('config.providerActivated', { name: id }));
+    })
+    .catch((e) => showToast(I18n.t('error.unknown') + ': ' + e.message, 'error'));
+}
+
+function deleteCustomProvider(id) {
+  if (id === _activeLlmBackend) {
+    showToast(I18n.t('config.cannotDeleteActiveProvider'), 'error');
+    return;
+  }
+  if (!confirm(I18n.t('config.confirmDeleteProvider', { id }))) return;
+  _customProviders = _customProviders.filter((p) => p.id !== id);
+  saveCustomProviders().then(() => {
+    renderProviders();
+    showToast(I18n.t('config.providerDeleted'));
+  });
+}
+
+function saveCustomProviders() {
+  return apiFetchVoid('/api/settings/llm_custom_providers', { method: 'PUT', body: { value: _customProviders } });
+}
+
+// Add provider form
+
+document.getElementById('add-provider-btn').addEventListener('click', () => {
+  document.getElementById('add-provider-form').style.display = '';
+  document.getElementById('add-provider-btn').style.display = 'none';
+  document.getElementById('provider-name').focus();
+});
+
+document.getElementById('cancel-provider-btn').addEventListener('click', () => {
+  resetProviderForm();
+});
+
+document.getElementById('save-provider-btn').addEventListener('click', () => {
+  const name = document.getElementById('provider-name').value.trim();
+  const id = document.getElementById('provider-id').value.trim();
+  const adapter = document.getElementById('provider-adapter').value;
+  const baseUrl = document.getElementById('provider-base-url').value.trim();
+  const apiKey = document.getElementById('provider-api-key').value.trim();
+  const model = document.getElementById('provider-model').value.trim();
+
+  if (!id || !name) {
+    showToast(I18n.t('config.providerFieldsRequired'), 'error');
+    return;
+  }
+  if (!/^[a-z0-9_-]+$/.test(id)) {
+    showToast(I18n.t('config.providerIdInvalid'), 'error');
+    return;
+  }
+  const allIds = [...BUILTIN_PROVIDERS.map((p) => p.id), ..._customProviders.map((p) => p.id)];
+  if (allIds.includes(id)) {
+    showToast(I18n.t('config.providerIdTaken', { id }), 'error');
+    return;
+  }
+
+  const newProvider = { id, name, adapter, base_url: baseUrl, default_model: model, api_key: apiKey || undefined, builtin: false };
+  _customProviders.push(newProvider);
+
+  saveCustomProviders().then(() => {
+    renderProviders();
+    resetProviderForm();
+    document.getElementById('config-restart-notice').style.display = 'flex';
+    showToast(I18n.t('config.providerAdded', { name }));
+  }).catch((e) => {
+    _customProviders.pop();
+    showToast(I18n.t('error.unknown') + ': ' + e.message, 'error');
+  });
+});
+
+function resetProviderForm() {
+  document.getElementById('add-provider-form').style.display = 'none';
+  document.getElementById('add-provider-btn').style.display = '';
+  ['provider-name', 'provider-id', 'provider-base-url', 'provider-api-key', 'provider-model'].forEach((id) => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('provider-adapter').selectedIndex = 0;
+}
+
+// Auto-fill provider ID from name
+document.getElementById('provider-name').addEventListener('input', (e) => {
+  const idField = document.getElementById('provider-id');
+  if (!idField.dataset.edited) {
+    idField.value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+});
+
+document.getElementById('provider-id').addEventListener('input', (e) => {
+  e.target.dataset.edited = e.target.value ? '1' : '';
 });

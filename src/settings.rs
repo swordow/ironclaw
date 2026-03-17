@@ -9,6 +9,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::bootstrap::ironclaw_base_dir;
 
+/// A custom LLM provider defined by the user through the web UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomLlmProviderSettings {
+    /// Unique identifier (used as `llm_backend` value).
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Adapter protocol: "open_ai_completions", "anthropic", "ollama".
+    pub adapter: String,
+    /// Base URL for the API endpoint.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// Default model identifier.
+    #[serde(default)]
+    pub default_model: Option<String>,
+    /// Optional API key stored inline.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Whether this is a built-in provider (should always be false for custom).
+    #[serde(default)]
+    pub builtin: bool,
+}
+
 /// User settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
@@ -58,6 +81,10 @@ pub struct Settings {
     /// LLM backend: "nearai", "anthropic", "openai", "ollama", "openai_compatible", "tinfoil", "bedrock".
     #[serde(default)]
     pub llm_backend: Option<String>,
+
+    /// Custom LLM providers defined by the user through the web UI.
+    #[serde(default)]
+    pub llm_custom_providers: Vec<CustomLlmProviderSettings>,
 
     /// Ollama base URL (when llm_backend = "ollama").
     #[serde(default)]

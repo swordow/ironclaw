@@ -57,14 +57,21 @@ impl LlmConfig {
     pub(crate) fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
         let registry = ProviderRegistry::load();
 
-        // Determine backend: env var > settings > default ("nearai")
-        let backend = if let Some(b) = optional_env("LLM_BACKEND")? {
-            b
-        } else if let Some(ref b) = settings.llm_backend {
-            b.clone()
+        // Determine backend: db settings > env var > default ("nearai")
+        let (backend, backend_source) = if let Some(ref b) = settings.llm_backend {
+            (b.clone(), "db:llm_backend")
+        } else if let Some(b) = optional_env("LLM_BACKEND")? {
+            (b, "env:LLM_BACKEND")
         } else {
-            "nearai".to_string()
+            ("nearai".to_string(), "default")
         };
+        tracing::info!(
+            backend = %backend,
+            source = %backend_source,
+            db_llm_backend = ?settings.llm_backend,
+            custom_providers_count = settings.llm_custom_providers.len(),
+            "Resolving LLM backend"
+        );
 
         // Validate the backend is known
         let backend_lower = backend.to_lowercase();
@@ -73,7 +80,13 @@ impl LlmConfig {
         let is_bedrock =
             backend_lower == "bedrock" || backend_lower == "aws_bedrock" || backend_lower == "aws";
 
-        if !is_nearai && !is_bedrock && registry.find(&backend_lower).is_none() {
+        // Check custom providers defined
+        let custom_provider = settings
+            .llm_custom_providers
+            .iter()
+            .find(|p| p.id.to_lowercase() == backend_lower);
+
+        if !is_nearai && !is_bedrock && custom_provider.is_none() && registry.find(&backend_lower).is_none() {
             tracing::warn!(
                 "Unknown LLM backend '{}'. Will attempt as openai_compatible fallback.",
                 backend
@@ -123,6 +136,8 @@ impl LlmConfig {
         // Resolve registry provider config (for non-NearAI, non-Bedrock backends)
         let provider = if is_nearai || is_bedrock {
             None
+        } else if let Some(custom) = custom_provider {
+            Some(Self::resolve_custom_provider(custom, settings)?)
         } else {
             Some(Self::resolve_registry_provider(
                 &backend_lower,
@@ -195,6 +210,58 @@ impl LlmConfig {
             request_timeout_secs,
             cheap_model,
             smart_routing_cascade,
+        })
+    }
+
+    /// Resolve a `RegistryProviderConfig` from a user-defined custom provider.
+    fn resolve_custom_provider(
+        custom: &crate::settings::CustomLlmProviderSettings,
+        settings: &Settings,
+    ) -> Result<RegistryProviderConfig, ConfigError> {
+        tracing::info!(
+            id = %custom.id,
+            adapter = %custom.adapter,
+            base_url = ?custom.base_url,
+            "Resolving custom LLM provider"
+        );
+        let protocol = match custom.adapter.as_str() {
+            "anthropic" => ProviderProtocol::Anthropic,
+            "ollama" => ProviderProtocol::Ollama,
+            _ => ProviderProtocol::OpenAiCompletions,
+        };
+
+        let api_key = custom
+            .api_key
+            .as_ref()
+            .filter(|k| !k.is_empty())
+            .map(|k| SecretString::from(k.clone()));
+
+        let base_url = custom.base_url.clone().unwrap_or_default();
+        if base_url.is_empty() {
+            tracing::warn!(id = %custom.id, "Custom provider has no base_url configured — requests will fail");
+        }
+
+        let model = optional_env("LLM_MODEL")?
+            .or_else(|| settings.selected_model.clone())
+            .or_else(|| custom.default_model.clone())
+            .unwrap_or_default();
+        if model.is_empty() {
+            tracing::warn!(id = %custom.id, "Custom provider has no model configured — requests may fail");
+        }
+
+        Ok(RegistryProviderConfig {
+            protocol,
+            provider_id: custom.id.clone(),
+            api_key,
+            base_url,
+            model,
+            extra_headers: Vec::new(),
+            oauth_token: None,
+            is_codex_chatgpt: false,
+            refresh_token: None,
+            auth_path: None,
+            cache_retention: CacheRetention::default(),
+            unsupported_params: Vec::new(),
         })
     }
 
@@ -1055,6 +1122,75 @@ mod tests {
         // SAFETY: Cleanup
         unsafe {
             std::env::remove_var("LLM_REQUEST_TIMEOUT_SECS");
+        }
+    }
+
+    // ── Custom provider tests ───────────────────────────────────────
+
+    #[test]
+    fn custom_provider_resolves_when_backend_matches_id() {
+        let _guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        // SAFETY: Under ENV_MUTEX.
+        unsafe {
+            std::env::remove_var("LLM_BACKEND");
+            std::env::remove_var("LLM_MODEL");
+        }
+
+        let settings = Settings {
+            llm_backend: Some("myprovider".to_string()),
+            llm_custom_providers: vec![crate::settings::CustomLlmProviderSettings {
+                id: "myprovider".to_string(),
+                name: "My Provider".to_string(),
+                adapter: "open_ai_completions".to_string(),
+                base_url: Some("https://api.example.com/v1".to_string()),
+                default_model: Some("my-model".to_string()),
+                api_key: Some("sk-test".to_string()),
+                builtin: false,
+            }],
+            ..Default::default()
+        };
+
+        let cfg = LlmConfig::resolve(&settings).expect("resolve should succeed");
+        assert_eq!(cfg.backend, "myprovider");
+        let provider = cfg.provider.expect("provider config should be present");
+        assert_eq!(provider.provider_id, "myprovider");
+        assert_eq!(provider.base_url, "https://api.example.com/v1");
+        assert_eq!(provider.model, "my-model");
+        assert_eq!(provider.protocol, crate::llm::registry::ProviderProtocol::OpenAiCompletions);
+    }
+
+    #[test]
+    fn db_llm_backend_takes_priority_over_env_var() {
+        let _guard = ENV_MUTEX.lock().expect("env mutex poisoned");
+        // SAFETY: Under ENV_MUTEX.
+        unsafe {
+            std::env::set_var("LLM_BACKEND", "nearai");
+            std::env::remove_var("LLM_MODEL");
+        }
+
+        let settings = Settings {
+            llm_backend: Some("myprovider".to_string()),
+            llm_custom_providers: vec![crate::settings::CustomLlmProviderSettings {
+                id: "myprovider".to_string(),
+                name: "My Provider".to_string(),
+                adapter: "open_ai_completions".to_string(),
+                base_url: Some("https://api.example.com/v1".to_string()),
+                default_model: Some("my-model".to_string()),
+                api_key: None,
+                builtin: false,
+            }],
+            ..Default::default()
+        };
+
+        let cfg = LlmConfig::resolve(&settings).expect("resolve should succeed");
+        assert_eq!(
+            cfg.backend, "myprovider",
+            "DB setting should override LLM_BACKEND env var"
+        );
+
+        // SAFETY: Under ENV_MUTEX.
+        unsafe {
+            std::env::remove_var("LLM_BACKEND");
         }
     }
 }

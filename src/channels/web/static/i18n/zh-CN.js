@@ -31,6 +31,7 @@ I18n.register('zh-CN', {
   'tab.routines': '定时任务',
   'tab.extensions': '扩展',
   'tab.skills': '技能',
+  'tab.config': '配置',
   'tab.logs': '日志',
   
   // 状态
@@ -340,6 +341,34 @@ I18n.register('zh-CN', {
   'ext.removed': '已移除 {name}',
   'ext.installFailed': '安装失败: {message}',
   
+  // 配置页 — 模型提供商
+  'config.modelProviders': '模型提供商',
+  'config.addProvider': '+ 添加提供商',
+  'config.newProvider': '新建提供商',
+  'config.restartNotice': '更改将在重启后生效。',
+  'config.builtin': '内置',
+  'config.useProvider': '使用',
+  'config.providerName': '显示名称',
+  'config.providerNamePlaceholder': '我的提供商',
+  'config.providerId': '提供商 ID',
+  'config.providerIdPlaceholder': 'my-provider',
+  'config.providerIdHint': '小写字母、数字、连字符',
+  'config.providerAdapter': 'API 适配器',
+  'config.adapterOpenAI': 'OpenAI 兼容',
+  'config.adapterAnthropic': 'Anthropic',
+  'config.adapterOllama': 'Ollama',
+  'config.providerBaseUrl': '基础 URL',
+  'config.providerApiKey': 'API 密钥',
+  'config.providerModel': '默认模型',
+  'config.providerActivated': '已切换到 {name}（重启后生效）',
+  'config.providerAdded': '已添加提供商 "{name}"（重启后生效）',
+  'config.providerDeleted': '提供商已删除',
+  'config.confirmDeleteProvider': '确定删除提供商 "{id}"？',
+  'config.cannotDeleteActiveProvider': '无法删除当前正在使用的提供商，请先切换到其他提供商。',
+  'config.providerFieldsRequired': '显示名称和提供商 ID 为必填项',
+  'config.providerIdInvalid': '提供商 ID 只能包含小写字母、数字和连字符',
+  'config.providerIdTaken': '提供商 ID "{id}" 已被占用',
+
   // 配置
   'config.title': '配置 {name}',
   'config.telegramOwnerHint': '保存后，IronClaw 会显示一次性验证码。将 `/start CODE` 发送给你的 Telegram 机器人，IronClaw 会自动完成设置。',
