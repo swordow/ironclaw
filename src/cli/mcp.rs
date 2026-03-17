@@ -174,6 +174,13 @@ async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
         description,
     } = args;
 
+    if config::is_nearai_companion_server_name(&name) {
+        anyhow::bail!(
+            "Server name '{}' is reserved for the NEAR AI companion MCP server",
+            name
+        );
+    }
+
     let transport_lower = transport.to_lowercase();
 
     let mut config = match transport_lower.as_str() {
@@ -245,7 +252,7 @@ async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
 
     // Save (DB if available, else disk)
     let db = connect_db().await;
-    let mut servers = load_servers(db.as_deref()).await?;
+    let mut servers = load_persisted_servers(db.as_deref()).await?;
     servers.upsert(config);
     save_servers(db.as_deref(), &servers).await?;
 
@@ -290,7 +297,7 @@ async fn remove_server(name: String) -> anyhow::Result<()> {
     }
 
     let db = connect_db().await;
-    let mut servers = load_servers(db.as_deref()).await?;
+    let mut servers = load_persisted_servers(db.as_deref()).await?;
     if !servers.remove(&name) {
         anyhow::bail!("Server '{}' not found", name);
     }
@@ -306,7 +313,7 @@ async fn remove_server(name: String) -> anyhow::Result<()> {
 /// List configured MCP servers.
 async fn list_servers(verbose: bool) -> anyhow::Result<()> {
     let db = connect_db().await;
-    let servers = load_servers(db.as_deref()).await?;
+    let servers = load_servers_with_derived(db.as_deref()).await?;
 
     if servers.servers.is_empty() {
         println!();
@@ -412,7 +419,7 @@ async fn list_servers(verbose: bool) -> anyhow::Result<()> {
 async fn auth_server(name: String, user_id: String) -> anyhow::Result<()> {
     // Get server config
     let db = connect_db().await;
-    let servers = load_servers(db.as_deref()).await?;
+    let servers = load_servers_with_derived(db.as_deref()).await?;
     let server = servers
         .get(&name)
         .cloned()
@@ -496,7 +503,7 @@ async fn auth_server(name: String, user_id: String) -> anyhow::Result<()> {
 async fn test_server(name: String, user_id: String) -> anyhow::Result<()> {
     // Get server config
     let db = connect_db().await;
-    let servers = load_servers(db.as_deref()).await?;
+    let servers = load_servers_with_derived(db.as_deref()).await?;
     let server = servers
         .get(&name)
         .cloned()
@@ -641,7 +648,7 @@ async fn toggle_server(name: String, enable: bool, disable: bool) -> anyhow::Res
     }
 
     let db = connect_db().await;
-    let mut servers = load_servers(db.as_deref()).await?;
+    let mut servers = load_persisted_servers(db.as_deref()).await?;
 
     let server = servers
         .get_mut(&name)
@@ -674,13 +681,22 @@ async fn connect_db() -> Option<Arc<dyn Database>> {
     crate::db::connect_from_config(&config.database).await.ok()
 }
 
-/// Load MCP servers (DB if available, else disk).
-async fn load_servers(db: Option<&dyn Database>) -> Result<McpServersFile, config::ConfigError> {
-    let mut servers = if let Some(db) = db {
+/// Load only persisted MCP servers (DB if available, else disk).
+async fn load_persisted_servers(
+    db: Option<&dyn Database>,
+) -> Result<McpServersFile, config::ConfigError> {
+    Ok(if let Some(db) = db {
         config::load_mcp_servers_from_db(db, DEFAULT_USER_ID).await?
     } else {
         config::load_mcp_servers().await?
-    };
+    })
+}
+
+/// Load MCP servers plus any derived runtime companions.
+async fn load_servers_with_derived(
+    db: Option<&dyn Database>,
+) -> Result<McpServersFile, config::ConfigError> {
+    let mut servers = load_persisted_servers(db).await?;
 
     if let Ok(llm) = resolve_llm_from_env()
         && let Some(companion) = config::derive_nearai_companion_mcp_server_from_llm(&llm)
@@ -696,10 +712,15 @@ async fn save_servers(
     db: Option<&dyn Database>,
     servers: &McpServersFile,
 ) -> Result<(), config::ConfigError> {
+    let mut persisted = servers.clone();
+    persisted
+        .servers
+        .retain(|server| !config::is_nearai_companion_server_name(&server.name));
+
     if let Some(db) = db {
-        config::save_mcp_servers_to_db(db, DEFAULT_USER_ID, servers).await
+        config::save_mcp_servers_to_db(db, DEFAULT_USER_ID, &persisted).await
     } else {
-        config::save_mcp_servers(servers).await
+        config::save_mcp_servers(&persisted).await
     }
 }
 
