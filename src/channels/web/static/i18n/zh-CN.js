@@ -348,6 +348,8 @@ I18n.register('zh-CN', {
   'config.restartNotice': '更改将在重启后生效。',
   'config.builtin': '内置',
   'config.useProvider': '使用',
+  'config.configureProvider': '配置',
+  'config.providerConfigured': '提供商 "{name}" 已配置（重启后生效）',
   'config.currentModel': '模型：{model}',
   'config.providerName': '显示名称',
   'config.providerNamePlaceholder': '我的提供商',

@@ -348,6 +348,8 @@ I18n.register('en', {
   'config.restartNotice': 'Changes take effect after restart.',
   'config.builtin': 'built-in',
   'config.useProvider': 'Use',
+  'config.configureProvider': 'Configure',
+  'config.providerConfigured': 'Provider "{name}" configured (restart to apply)',
   'config.currentModel': 'Model: {model}',
   'config.providerName': 'Display Name',
   'config.providerNamePlaceholder': 'My Provider',

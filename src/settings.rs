@@ -3,6 +3,7 @@
 //! Stores user preferences in ~/.ironclaw/settings.json.
 //! Settings are loaded with env var > settings.json > default priority.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,20 @@ pub struct CustomLlmProviderSettings {
     /// Whether this is a built-in provider (should always be false for custom).
     #[serde(default)]
     pub builtin: bool,
+}
+
+/// Per-provider overrides for built-in LLM providers (API key and/or model).
+///
+/// Stored as `llm_builtin_overrides` in the settings store, keyed by provider ID
+/// (e.g. `"openai"`, `"gemini"`). Resolved at startup during `LlmConfig::resolve()`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmBuiltinOverride {
+    /// API key override (takes precedence over env var).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    /// Default model override (takes precedence over global `selected_model`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// User settings persisted to disk.
@@ -85,6 +100,10 @@ pub struct Settings {
     /// Custom LLM providers defined by the user through the web UI.
     #[serde(default)]
     pub llm_custom_providers: Vec<CustomLlmProviderSettings>,
+
+    /// Per-provider overrides for built-in providers (API key and/or model).
+    #[serde(default)]
+    pub llm_builtin_overrides: HashMap<String, LlmBuiltinOverride>,
 
     /// Ollama base URL (when llm_backend = "ollama").
     #[serde(default)]

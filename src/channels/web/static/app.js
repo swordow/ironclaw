@@ -4689,6 +4689,9 @@ document.addEventListener('click', function(e) {
     case 'edit-custom-provider':
       editCustomProvider(el.dataset.id);
       break;
+    case 'configure-builtin-provider':
+      configureBuiltinProvider(el.dataset.id);
+      break;
   }
 });
 
@@ -4715,30 +4718,32 @@ function apiFetchVoid(path, options) {
 }
 
 // Generated from providers.json + nearai/bedrock (handled separately in llm.rs)
+// Fields: id, name, adapter, base_url, builtin, default_model, api_key_required, can_list_models
+// nearai/bedrock use special auth flows — no Configure button (api_key_required=false, can_list_models=false)
 const BUILTIN_PROVIDERS = [
-  { id: 'nearai',            name: 'NEAR AI',           adapter: 'nearai',                base_url: 'https://api.near.ai/v1',                                   builtin: true },
-  { id: 'openai',            name: 'OpenAI',            adapter: 'open_ai_completions',   base_url: 'https://api.openai.com/v1',                                builtin: true },
-  { id: 'anthropic',         name: 'Anthropic',         adapter: 'anthropic',             base_url: 'https://api.anthropic.com',                                builtin: true },
-  { id: 'ollama',            name: 'Ollama',            adapter: 'ollama',                base_url: 'http://localhost:11434',                                    builtin: true },
-  { id: 'openai_compatible', name: 'OpenAI Compatible', adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true },
-  { id: 'gemini',            name: 'Google Gemini',     adapter: 'open_ai_completions',   base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',   builtin: true },
-  { id: 'groq',              name: 'Groq',              adapter: 'open_ai_completions',   base_url: 'https://api.groq.com/openai/v1',                           builtin: true },
-  { id: 'openrouter',        name: 'OpenRouter',        adapter: 'open_ai_completions',   base_url: 'https://openrouter.ai/api/v1',                             builtin: true },
-  { id: 'deepseek',          name: 'DeepSeek',          adapter: 'open_ai_completions',   base_url: 'https://api.deepseek.com/v1',                              builtin: true },
-  { id: 'mistral',           name: 'Mistral',           adapter: 'open_ai_completions',   base_url: 'https://api.mistral.ai/v1',                                builtin: true },
-  { id: 'tinfoil',           name: 'Tinfoil',           adapter: 'open_ai_completions',   base_url: 'https://inference.tinfoil.sh/v1',                          builtin: true },
-  { id: 'nvidia',            name: 'NVIDIA NIM',        adapter: 'open_ai_completions',   base_url: 'https://integrate.api.nvidia.com/v1',                      builtin: true },
-  { id: 'together',          name: 'Together AI',       adapter: 'open_ai_completions',   base_url: 'https://api.together.xyz/v1',                              builtin: true },
-  { id: 'fireworks',         name: 'Fireworks AI',      adapter: 'open_ai_completions',   base_url: 'https://api.fireworks.ai/inference/v1',                    builtin: true },
-  { id: 'cerebras',          name: 'Cerebras',          adapter: 'open_ai_completions',   base_url: 'https://api.cerebras.ai/v1',                               builtin: true },
-  { id: 'sambanova',         name: 'SambaNova',         adapter: 'open_ai_completions',   base_url: 'https://api.sambanova.ai/v1',                              builtin: true },
-  { id: 'zai',               name: 'Z.AI',              adapter: 'open_ai_completions',   base_url: 'https://api.z.ai/api/paas/v4',                             builtin: true },
-  { id: 'venice',            name: 'Venice.ai',         adapter: 'open_ai_completions',   base_url: 'https://api.venice.ai/api/v1',                             builtin: true },
-  { id: 'minimax',           name: 'MiniMax',           adapter: 'open_ai_completions',   base_url: 'https://api.minimax.io/v1',                                builtin: true },
-  { id: 'ionet',             name: 'io.net',            adapter: 'open_ai_completions',   base_url: 'https://api.intelligence.io.solutions/api/v1',             builtin: true },
-  { id: 'cloudflare',        name: 'Cloudflare AI',     adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true },
-  { id: 'yandex',            name: 'Yandex AI Studio',  adapter: 'open_ai_completions',   base_url: 'https://ai.api.cloud.yandex.net/v1',                       builtin: true },
-  { id: 'bedrock',           name: 'AWS Bedrock',       adapter: 'bedrock',               base_url: '',                                                         builtin: true },
+  { id: 'nearai',            name: 'NEAR AI',           adapter: 'nearai',                base_url: 'https://api.near.ai/v1',                                   builtin: true, default_model: '',                                              api_key_required: false, can_list_models: false },
+  { id: 'openai',            name: 'OpenAI',            adapter: 'open_ai_completions',   base_url: 'https://api.openai.com/v1',                                builtin: true, default_model: 'gpt-5-mini',                                    api_key_required: true,  can_list_models: true  },
+  { id: 'anthropic',         name: 'Anthropic',         adapter: 'anthropic',             base_url: 'https://api.anthropic.com',                                builtin: true, default_model: 'claude-sonnet-4-20250514',                       api_key_required: true,  can_list_models: true  },
+  { id: 'ollama',            name: 'Ollama',            adapter: 'ollama',                base_url: 'http://localhost:11434',                                    builtin: true, default_model: 'llama3',                                        api_key_required: false, can_list_models: true  },
+  { id: 'openai_compatible', name: 'OpenAI Compatible', adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true, default_model: 'default',                                       api_key_required: false, can_list_models: false },
+  { id: 'gemini',            name: 'Google Gemini',     adapter: 'open_ai_completions',   base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',   builtin: true, default_model: 'gemini-2.5-flash',                              api_key_required: true,  can_list_models: true  },
+  { id: 'groq',              name: 'Groq',              adapter: 'open_ai_completions',   base_url: 'https://api.groq.com/openai/v1',                           builtin: true, default_model: 'llama-3.3-70b-versatile',                       api_key_required: true,  can_list_models: true  },
+  { id: 'openrouter',        name: 'OpenRouter',        adapter: 'open_ai_completions',   base_url: 'https://openrouter.ai/api/v1',                             builtin: true, default_model: 'openai/gpt-4o',                                 api_key_required: true,  can_list_models: false },
+  { id: 'deepseek',          name: 'DeepSeek',          adapter: 'open_ai_completions',   base_url: 'https://api.deepseek.com/v1',                              builtin: true, default_model: 'deepseek-chat',                                 api_key_required: true,  can_list_models: false },
+  { id: 'mistral',           name: 'Mistral',           adapter: 'open_ai_completions',   base_url: 'https://api.mistral.ai/v1',                                builtin: true, default_model: 'mistral-large-latest',                          api_key_required: true,  can_list_models: true  },
+  { id: 'tinfoil',           name: 'Tinfoil',           adapter: 'open_ai_completions',   base_url: 'https://inference.tinfoil.sh/v1',                          builtin: true, default_model: 'kimi-k2-5',                                     api_key_required: true,  can_list_models: false },
+  { id: 'nvidia',            name: 'NVIDIA NIM',        adapter: 'open_ai_completions',   base_url: 'https://integrate.api.nvidia.com/v1',                      builtin: true, default_model: 'meta/llama-3.3-70b-instruct',                   api_key_required: true,  can_list_models: true  },
+  { id: 'together',          name: 'Together AI',       adapter: 'open_ai_completions',   base_url: 'https://api.together.xyz/v1',                              builtin: true, default_model: 'meta-llama/Llama-3-70b-chat-hf',                api_key_required: true,  can_list_models: false },
+  { id: 'fireworks',         name: 'Fireworks AI',      adapter: 'open_ai_completions',   base_url: 'https://api.fireworks.ai/inference/v1',                    builtin: true, default_model: 'accounts/fireworks/models/llama-v3p1-70b-instruct', api_key_required: true, can_list_models: false },
+  { id: 'cerebras',          name: 'Cerebras',          adapter: 'open_ai_completions',   base_url: 'https://api.cerebras.ai/v1',                               builtin: true, default_model: 'llama-3.3-70b',                                 api_key_required: true,  can_list_models: false },
+  { id: 'sambanova',         name: 'SambaNova',         adapter: 'open_ai_completions',   base_url: 'https://api.sambanova.ai/v1',                              builtin: true, default_model: 'Meta-Llama-3.1-70B-Instruct',                   api_key_required: true,  can_list_models: false },
+  { id: 'zai',               name: 'Z.AI',              adapter: 'open_ai_completions',   base_url: 'https://api.z.ai/api/paas/v4',                             builtin: true, default_model: 'glm-5',                                         api_key_required: true,  can_list_models: false },
+  { id: 'venice',            name: 'Venice.ai',         adapter: 'open_ai_completions',   base_url: 'https://api.venice.ai/api/v1',                             builtin: true, default_model: 'llama-3.3-70b',                                 api_key_required: true,  can_list_models: false },
+  { id: 'minimax',           name: 'MiniMax',           adapter: 'open_ai_completions',   base_url: 'https://api.minimax.io/v1',                                builtin: true, default_model: 'MiniMax-M2.5',                                  api_key_required: true,  can_list_models: false },
+  { id: 'ionet',             name: 'io.net',            adapter: 'open_ai_completions',   base_url: 'https://api.intelligence.io.solutions/api/v1',             builtin: true, default_model: 'deepseek-coder-v2-instruct',                    api_key_required: true,  can_list_models: true  },
+  { id: 'cloudflare',        name: 'Cloudflare AI',     adapter: 'open_ai_completions',   base_url: '',                                                         builtin: true, default_model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',      api_key_required: true,  can_list_models: false },
+  { id: 'yandex',            name: 'Yandex AI Studio',  adapter: 'open_ai_completions',   base_url: 'https://ai.api.cloud.yandex.net/v1',                       builtin: true, default_model: 'yandexgpt-lite',                                api_key_required: true,  can_list_models: true  },
+  { id: 'bedrock',           name: 'AWS Bedrock',       adapter: 'bedrock',               base_url: '',                                                         builtin: true, default_model: '',                                              api_key_required: false, can_list_models: false },
 ];
 
 const ADAPTER_LABELS = {
@@ -4752,7 +4757,9 @@ const ADAPTER_LABELS = {
 let _customProviders = [];
 let _activeLlmBackend = '';
 let _selectedModel = '';
+let _builtinOverrides = {};
 let _editingProviderId = null;
+let _configuringBuiltinId = null;
 let _configLoaded = false;
 
 function loadConfig() {
@@ -4769,12 +4776,19 @@ function loadConfig() {
     } catch (e) {
       _customProviders = [];
     }
+    try {
+      const val = s['llm_builtin_overrides'];
+      _builtinOverrides = (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+    } catch (e) {
+      _builtinOverrides = {};
+    }
     _configLoaded = true;
     renderProviders();
   }).catch(() => {
     _activeLlmBackend = 'nearai';
     _selectedModel = '';
     _customProviders = [];
+    _builtinOverrides = {};
     _configLoaded = true;
     renderProviders();
   });
@@ -4808,14 +4822,22 @@ function renderProviders() {
     const editBtn = !p.builtin
       ? '<button class="provider-action-btn" data-action="edit-custom-provider" data-id="' + escHtml(p.id) + '">' + I18n.t('common.edit') + '</button>'
       : '';
+    // Show Configure for built-in providers that support it (not nearai/bedrock)
+    const configureBtn = p.builtin && p.id !== 'nearai' && p.id !== 'bedrock'
+      ? '<button class="provider-action-btn" data-action="configure-builtin-provider" data-id="' + escHtml(p.id) + '">' + I18n.t('config.configureProvider') + '</button>'
+      : '';
     const useBtn = !isActive
       ? '<button class="provider-action-btn" data-action="set-active-provider" data-id="' + escHtml(p.id) + '">' + I18n.t('config.useProvider') + '</button>'
       : '';
     const baseUrlText = p.base_url
       ? '<span class="provider-url">' + escHtml(p.base_url) + '</span>'
       : '';
-    const modelText = isActive && _selectedModel
-      ? '<span class="provider-current-model">' + escHtml(I18n.t('config.currentModel', { model: _selectedModel })) + '</span>'
+    // Show configured model: for active provider use _selectedModel, for others check _builtinOverrides
+    const displayModel = isActive
+      ? _selectedModel
+      : (p.builtin && _builtinOverrides[p.id] ? (_builtinOverrides[p.id].model || '') : '');
+    const modelText = displayModel
+      ? '<span class="provider-current-model">' + escHtml(I18n.t('config.currentModel', { model: displayModel })) + '</span>'
       : '';
 
     return '<div class="provider-card' + (isActive ? ' provider-card-active' : '') + '">'
@@ -4830,7 +4852,7 @@ function renderProviders() {
       +   modelText
       + '</div>'
       + '<div class="provider-card-actions">'
-      +   useBtn + editBtn + deleteBtn
+      +   useBtn + configureBtn + editBtn + deleteBtn
       + '</div>'
       + '</div>';
   }).join('');
@@ -4842,7 +4864,12 @@ function escHtml(s) {
 
 function setActiveProvider(id) {
   const provider = [...BUILTIN_PROVIDERS, ..._customProviders].find((p) => p.id === id);
-  const defaultModel = provider && provider.default_model ? provider.default_model : null;
+  // Restore the last-configured model for this provider, falling back to the provider's default
+  const restoredModel =
+    (_builtinOverrides[id] && _builtinOverrides[id].model) ||
+    (provider && provider.default_model) ||
+    null;
+  const defaultModel = restoredModel;
   const modelUpdate = defaultModel
     ? apiFetchVoid('/api/settings/selected_model', { method: 'PUT', body: { value: defaultModel } })
     : apiFetchVoid('/api/settings/selected_model', { method: 'DELETE' });
@@ -4896,6 +4923,35 @@ function editCustomProvider(id) {
   document.getElementById('provider-name').focus();
 }
 
+function configureBuiltinProvider(id) {
+  const p = BUILTIN_PROVIDERS.find((p) => p.id === id);
+  if (!p) return;
+  _configuringBuiltinId = id;
+  const titleEl = document.getElementById('provider-form-title');
+  titleEl.textContent = I18n.t('config.configureProvider') + ': ' + escHtml(p.name || id);
+  titleEl.removeAttribute('data-i18n');
+  // Hide name/id/adapter rows; show base-url as read-only for reference
+  document.getElementById('provider-name-row').style.display = 'none';
+  document.getElementById('provider-id-row').style.display = 'none';
+  document.getElementById('provider-adapter-row').style.display = 'none';
+  const baseUrlInput = document.getElementById('provider-base-url');
+  if (p.base_url) {
+    document.getElementById('provider-base-url-row').style.display = '';
+    baseUrlInput.value = p.base_url;
+    baseUrlInput.readOnly = true;
+    baseUrlInput.style.opacity = '0.6';
+  } else {
+    document.getElementById('provider-base-url-row').style.display = 'none';
+  }
+  document.getElementById('provider-api-key-row').style.display = p.api_key_required !== false ? '' : 'none';
+  document.getElementById('fetch-models-btn').style.display = p.can_list_models ? '' : 'none';
+  const override = _builtinOverrides[id] || {};
+  document.getElementById('provider-api-key').value = override.api_key || '';
+  document.getElementById('provider-model').value = override.model || p.default_model || '';
+  openProviderDialog(true);
+  document.getElementById('provider-model').focus();
+}
+
 // Add provider form
 
 document.getElementById('add-provider-btn').addEventListener('click', () => {
@@ -4915,6 +4971,14 @@ document.getElementById('provider-dialog-overlay').addEventListener('click', () 
 });
 
 function openProviderDialog(isEdit) {
+  if (!isEdit) {
+    // Add mode: ensure all rows visible
+    ['provider-name-row', 'provider-id-row', 'provider-adapter-row',
+     'provider-base-url-row', 'provider-api-key-row'].forEach((id) => {
+      document.getElementById(id).style.display = '';
+    });
+    document.getElementById('fetch-models-btn').style.display = '';
+  }
   document.getElementById('provider-dialog').style.display = 'flex';
   if (!isEdit) {
     document.getElementById('provider-name').focus();
@@ -4922,10 +4986,19 @@ function openProviderDialog(isEdit) {
 }
 
 document.getElementById('test-provider-btn').addEventListener('click', () => {
-  const adapter = document.getElementById('provider-adapter').value;
-  const baseUrl = document.getElementById('provider-base-url').value.trim();
+  let adapter = document.getElementById('provider-adapter').value;
+  let baseUrl = document.getElementById('provider-base-url').value.trim();
   const apiKey = document.getElementById('provider-api-key').value.trim();
   const model = document.getElementById('provider-model').value.trim();
+
+  // For built-in providers, use the hardcoded adapter/base_url from BUILTIN_PROVIDERS
+  if (_configuringBuiltinId) {
+    const p = BUILTIN_PROVIDERS.find((x) => x.id === _configuringBuiltinId);
+    if (p) {
+      adapter = p.adapter;
+      baseUrl = p.base_url;
+    }
+  }
 
   const btn = document.getElementById('test-provider-btn');
   const result = document.getElementById('test-connection-result');
@@ -4956,6 +5029,38 @@ document.getElementById('test-provider-btn').addEventListener('click', () => {
 });
 
 document.getElementById('save-provider-btn').addEventListener('click', () => {
+  // Built-in configure mode: save api_key + model to llm_builtin_overrides
+  if (_configuringBuiltinId) {
+    const apiKey = document.getElementById('provider-api-key').value.trim();
+    const model = document.getElementById('provider-model').value.trim();
+    const id = _configuringBuiltinId;
+    const override = {};
+    if (apiKey) override.api_key = apiKey;
+    if (model) override.model = model;
+    const prev = _builtinOverrides[id];
+    _builtinOverrides[id] = override;
+    const isActive = id === _activeLlmBackend;
+    const modelUpdate = isActive
+      ? (model
+        ? apiFetchVoid('/api/settings/selected_model', { method: 'PUT', body: { value: model } })
+        : apiFetchVoid('/api/settings/selected_model', { method: 'DELETE' }))
+      : Promise.resolve();
+    apiFetchVoid('/api/settings/llm_builtin_overrides', { method: 'PUT', body: { value: _builtinOverrides } })
+      .then(() => modelUpdate)
+      .then(() => {
+        if (isActive) _selectedModel = model;
+        renderProviders();
+        resetProviderForm();
+        document.getElementById('config-restart-notice').style.display = 'flex';
+        showToast(I18n.t('config.providerConfigured', { name: id }));
+      })
+      .catch((e) => {
+        if (prev !== undefined) { _builtinOverrides[id] = prev; } else { delete _builtinOverrides[id]; }
+        showToast(I18n.t('error.unknown') + ': ' + e.message, 'error');
+      });
+    return;
+  }
+
   const name = document.getElementById('provider-name').value.trim();
   const id = document.getElementById('provider-id').value.trim();
   const adapter = document.getElementById('provider-adapter').value;
@@ -5019,13 +5124,23 @@ document.getElementById('save-provider-btn').addEventListener('click', () => {
 
 function resetProviderForm() {
   _editingProviderId = null;
+  _configuringBuiltinId = null;
   document.getElementById('provider-dialog').style.display = 'none';
+  // Restore all hidden rows and buttons
+  ['provider-name-row', 'provider-id-row', 'provider-adapter-row',
+   'provider-base-url-row', 'provider-api-key-row'].forEach((id) => {
+    document.getElementById(id).style.display = '';
+  });
+  document.getElementById('fetch-models-btn').style.display = '';
   const titleEl = document.getElementById('provider-form-title');
   titleEl.setAttribute('data-i18n', 'config.newProvider');
   titleEl.textContent = I18n.t('config.newProvider');
   const idField = document.getElementById('provider-id');
   idField.readOnly = false;
   idField.style.opacity = '';
+  const baseUrlField = document.getElementById('provider-base-url');
+  baseUrlField.readOnly = false;
+  baseUrlField.style.opacity = '';
   ['provider-name', 'provider-id', 'provider-base-url', 'provider-api-key', 'provider-model'].forEach((id) => {
     document.getElementById(id).value = '';
   });
@@ -5041,9 +5156,18 @@ document.getElementById('provider-model-select').addEventListener('change', (e) 
 });
 
 document.getElementById('fetch-models-btn').addEventListener('click', () => {
-  const adapter = document.getElementById('provider-adapter').value;
-  const baseUrl = document.getElementById('provider-base-url').value.trim();
+  let adapter = document.getElementById('provider-adapter').value;
+  let baseUrl = document.getElementById('provider-base-url').value.trim();
   const apiKey = document.getElementById('provider-api-key').value.trim();
+
+  // For built-in providers, use the hardcoded base_url and adapter from BUILTIN_PROVIDERS
+  if (_configuringBuiltinId) {
+    const p = BUILTIN_PROVIDERS.find((x) => x.id === _configuringBuiltinId);
+    if (p) {
+      adapter = p.adapter;
+      baseUrl = p.base_url;
+    }
+  }
 
   if (!baseUrl) {
     showToast(I18n.t('config.providerBaseUrlRequired'), 'error');

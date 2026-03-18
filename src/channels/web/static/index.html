@@ -54,16 +54,16 @@
       </div>
       <div class="provider-dialog-body">
         <div class="config-form">
-          <div class="config-form-row">
+          <div class="config-form-row" id="provider-name-row">
             <label data-i18n="config.providerName">Display Name</label>
             <input type="text" id="provider-name" data-i18n="config.providerNamePlaceholder" data-i18n-attr="placeholder" placeholder="My Provider">
           </div>
-          <div class="config-form-row">
+          <div class="config-form-row" id="provider-id-row">
             <label data-i18n="config.providerId">Provider ID</label>
             <input type="text" id="provider-id" data-i18n="config.providerIdPlaceholder" data-i18n-attr="placeholder" placeholder="my-provider">
             <span class="config-form-hint" data-i18n="config.providerIdHint">Lowercase letters, numbers, hyphens</span>
           </div>
-          <div class="config-form-row">
+          <div class="config-form-row" id="provider-adapter-row">
             <label data-i18n="config.providerAdapter">API Adapter</label>
             <select id="provider-adapter">
               <option value="open_ai_completions" data-i18n="config.adapterOpenAI">OpenAI Compatible</option>
@@ -71,11 +71,11 @@
               <option value="ollama" data-i18n="config.adapterOllama">Ollama</option>
             </select>
           </div>
-          <div class="config-form-row">
+          <div class="config-form-row" id="provider-base-url-row">
             <label data-i18n="config.providerBaseUrl">Base URL</label>
             <input type="text" id="provider-base-url" placeholder="https://api.example.com/v1">
           </div>
-          <div class="config-form-row">
+          <div class="config-form-row" id="provider-api-key-row">
             <label data-i18n="config.providerApiKey">API Key</label>
             <input type="password" id="provider-api-key" placeholder="sk-...">
           </div>
