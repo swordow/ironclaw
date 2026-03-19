@@ -1,4 +1,4 @@
-pub(crate) fn prepare_tool_params(
+pub fn prepare_tool_params(
     tool: &dyn crate::tools::tool::Tool,
     params: &serde_json::Value,
 ) -> serde_json::Value {

@@ -17,6 +17,7 @@ use wasmtime::component::Linker;
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::context::JobContext;
+use crate::llm::recording::{HttpExchangeRequest, HttpInterceptor};
 use crate::safety::LeakDetector;
 use crate::secrets::SecretsStore;
 use crate::tools::tool::{Tool, ToolError, ToolOutput};
@@ -99,6 +100,9 @@ struct StoreData {
     /// Dedicated tokio runtime for HTTP requests, lazily initialized.
     /// Reused across multiple `http_request` calls within one execution.
     http_runtime: Option<tokio::runtime::Runtime>,
+    /// Optional HTTP interceptor for testing — returns canned responses
+    /// instead of making real requests when set.
+    http_interceptor: Option<Arc<dyn HttpInterceptor>>,
 }
 
 impl StoreData {
@@ -119,6 +123,7 @@ impl StoreData {
             credentials,
             host_credentials,
             http_runtime: None,
+            http_interceptor: None,
         }
     }
 
@@ -344,6 +349,42 @@ impl near::agent::host::Host for StoreData {
             );
         }
         let rt = self.http_runtime.as_ref().expect("just initialized"); // safety: is_none branch above guarantees Some
+
+        // If an HTTP interceptor is set (testing), short-circuit with a canned response.
+        if let Some(interceptor) = &self.http_interceptor {
+            let interceptor = Arc::clone(interceptor);
+            let intercept_url = url.clone();
+            let intercept_method = method.clone();
+            let intercept_headers: Vec<(String, String)> =
+                headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let intercept_body = body
+                .as_ref()
+                .map(|b| String::from_utf8_lossy(b).to_string());
+            let intercepted = rt.block_on(async {
+                let req = HttpExchangeRequest {
+                    method: intercept_method,
+                    url: intercept_url,
+                    headers: intercept_headers,
+                    body: intercept_body,
+                };
+                interceptor.before_request(&req).await
+            });
+            if let Some(resp) = intercepted {
+                let resp_headers: HashMap<String, String> = resp
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                let resp_headers_json =
+                    serde_json::to_string(&resp_headers).unwrap_or_else(|_| "{}".to_string());
+                return Ok(near::agent::host::HttpResponse {
+                    status: resp.status,
+                    headers_json: resp_headers_json,
+                    body: resp.body.into_bytes(),
+                });
+            }
+        }
+
         let result = rt.block_on(async {
             let client = reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
@@ -476,6 +517,9 @@ pub struct WasmToolWrapper {
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     /// OAuth refresh configuration for auto-refreshing expired tokens.
     oauth_refresh: Option<OAuthRefreshConfig>,
+    /// Optional HTTP interceptor for testing — returns canned responses
+    /// instead of making real requests when set.
+    http_interceptor: Option<Arc<dyn HttpInterceptor>>,
 }
 
 #[derive(Debug, Clone)]
@@ -592,7 +636,18 @@ impl WasmToolWrapper {
             credentials: HashMap::new(),
             secrets_store: None,
             oauth_refresh: None,
+            http_interceptor: None,
         }
+    }
+
+    /// Set an HTTP interceptor for testing.
+    ///
+    /// When set, WASM tool HTTP requests are routed through the interceptor
+    /// instead of making real network calls. This allows tests to verify the
+    /// exact HTTP requests a WASM tool constructs.
+    pub fn with_http_interceptor(mut self, interceptor: Arc<dyn HttpInterceptor>) -> Self {
+        self.http_interceptor = Some(interceptor);
+        self
     }
 
     /// Override the tool description.
@@ -679,12 +734,13 @@ impl WasmToolWrapper {
         let limits = &self.prepared.limits;
 
         // Create store with fresh state (NEAR pattern: fresh instance per call)
-        let store_data = StoreData::new(
+        let mut store_data = StoreData::new(
             limits.memory_bytes,
             self.capabilities.clone(),
             self.credentials.clone(),
             host_credentials,
         );
+        store_data.http_interceptor = self.http_interceptor.clone();
         let mut store = Store::new(engine, store_data);
 
         // Configure fuel if enabled
@@ -900,6 +956,7 @@ impl Tool for WasmToolWrapper {
                 credentials,
                 secrets_store: None, // Not needed in blocking task
                 oauth_refresh: None, // Already used above for pre-refresh
+                http_interceptor: self.http_interceptor.clone(),
             };
 
             tokio::task::spawn_blocking(move || {
