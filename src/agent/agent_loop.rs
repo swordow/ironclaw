@@ -1090,9 +1090,14 @@ impl Agent {
                         );
                     }
 
-                    // Process merged queued messages as a single turn
+                    // Process merged queued messages as a single turn.
+                    // Use a message clone with cleared attachments so
+                    // augment_with_attachments doesn't re-apply the original
+                    // message's attachments to unrelated queued text.
+                    let mut queued_msg = message.clone();
+                    queued_msg.attachments.clear();
                     result = self
-                        .process_user_input(message, session.clone(), thread_id, &next_content)
+                        .process_user_input(&queued_msg, session.clone(), thread_id, &next_content)
                         .await;
                 }
 
