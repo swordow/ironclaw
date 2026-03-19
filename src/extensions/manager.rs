@@ -1009,6 +1009,32 @@ impl ExtensionManager {
         }
     }
 
+    /// Activate the derived NEAR AI companion MCP server if auth is already
+    /// available and the companion is not active yet.
+    ///
+    /// Returns `Ok(true)` only when this call performed an activation.
+    pub async fn ensure_nearai_companion_active_if_ready(&self) -> Result<bool, ExtensionError> {
+        let Some(companion) = self.companion_mcp_server.as_ref() else {
+            return Ok(false);
+        };
+
+        let companion_name = companion.name.clone();
+
+        {
+            let clients = self.mcp_clients.read().await;
+            if clients.contains_key(&companion_name) {
+                return Ok(false);
+            }
+        }
+
+        if !self.is_runtime_authenticated(companion).await {
+            return Ok(false);
+        }
+
+        self.activate(&companion_name).await?;
+        Ok(true)
+    }
+
     /// List extensions with their status.
     ///
     /// When `include_available` is `true`, registry entries that are not yet
@@ -5556,6 +5582,7 @@ mod tests {
         wasm_runtime: Option<Arc<crate::tools::wasm::WasmToolRuntime>>,
         tools_dir: std::path::PathBuf,
         channels_dir: std::path::PathBuf,
+        companion_mcp_server: Option<crate::tools::mcp::config::McpServerConfig>,
     ) -> crate::extensions::manager::ExtensionManager {
         use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
         use crate::tools::mcp::process::McpProcessManager;
@@ -5585,7 +5612,7 @@ mod tests {
             None, // tunnel_url
             "test".to_string(),
             None, // db
-            None, // companion MCP
+            companion_mcp_server,
             vec![],
         )
     }
@@ -5594,7 +5621,7 @@ mod tests {
         wasm_runtime: Option<Arc<crate::tools::wasm::WasmToolRuntime>>,
         tools_dir: std::path::PathBuf,
     ) -> crate::extensions::manager::ExtensionManager {
-        make_test_manager_with_dirs(wasm_runtime, tools_dir.clone(), tools_dir)
+        make_test_manager_with_dirs(wasm_runtime, tools_dir.clone(), tools_dir, None)
     }
 
     #[tokio::test]
@@ -5661,6 +5688,36 @@ mod tests {
         assert!(
             err.to_string().contains("reserved"),
             "Expected reserved-name message, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ensure_nearai_companion_active_if_ready_skips_without_auth() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let companion = crate::tools::mcp::config::McpServerConfig::new(
+            crate::tools::mcp::config::NEARAI_COMPANION_MCP_NAME,
+            "https://private.near.ai/mcp",
+        )
+        .with_auth_source(crate::tools::mcp::config::McpAuthSource::NearAi);
+        let manager = make_test_manager_with_dirs(
+            None,
+            dir.path().join("tools"),
+            dir.path().join("channels"),
+            Some(companion),
+        );
+
+        let activated = manager
+            .ensure_nearai_companion_active_if_ready()
+            .await
+            .expect("helper should not fail when auth is missing");
+
+        assert!(!activated, "companion should not activate without auth");
+        assert!(
+            !manager
+                .mcp_clients
+                .read()
+                .await
+                .contains_key(crate::tools::mcp::config::NEARAI_COMPANION_MCP_NAME)
         );
     }
 
@@ -6638,7 +6695,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let tools_dir = dir.path().join("tools");
         let channels_dir = dir.path().join("channels");
-        let mgr = make_test_manager_with_dirs(None, tools_dir, channels_dir.clone());
+        let mgr = make_test_manager_with_dirs(None, tools_dir, channels_dir.clone(), None);
 
         let wasm_path = channels_dir.join("telegram.wasm");
         let cap_path = channels_dir.join("telegram.capabilities.json");
