@@ -1035,8 +1035,67 @@ impl Agent {
         // Process based on submission type
         let result = match submission {
             Submission::UserInput { content } => {
-                self.process_user_input(message, session, thread_id, &content)
-                    .await
+                let mut result = self
+                    .process_user_input(message, session.clone(), thread_id, &content)
+                    .await;
+
+                // Drain any messages queued during processing.
+                // Messages are merged (newline-separated) so the LLM receives
+                // full context from rapid consecutive inputs instead of
+                // processing each as a separate turn with partial context (#259).
+                // Stop if the thread is blocked (approval/interrupt) or a hard
+                // error occurred.
+                // NOTE: NeedApproval stops the drain — remaining messages will be
+                // processed on the next user-initiated turn after approval resolves.
+                loop {
+                    match &result {
+                        Ok(SubmissionResult::NeedApproval { .. })
+                        | Ok(SubmissionResult::Interrupted)
+                        | Err(_) => break,
+                        _ => {}
+                    }
+
+                    let merged = {
+                        let mut sess = session.lock().await;
+                        sess.threads
+                            .get_mut(&thread_id)
+                            .and_then(|t| t.drain_pending_messages())
+                    };
+                    let Some(next_content) = merged else {
+                        break;
+                    };
+
+                    tracing::debug!(
+                        thread_id = %thread_id,
+                        merged_len = next_content.len(),
+                        "Drain loop: processing merged queued messages"
+                    );
+
+                    // Send the completed turn's response/error before starting next
+                    let outgoing = match &result {
+                        Ok(SubmissionResult::Response { content }) => Some(content.clone()),
+                        Ok(SubmissionResult::Error { message }) => Some(message.clone()),
+                        _ => None,
+                    };
+                    if let Some(text) = outgoing
+                        && let Err(e) = self
+                            .channels
+                            .respond(message, OutgoingResponse::text(text))
+                            .await
+                    {
+                        tracing::warn!(
+                            thread_id = %thread_id,
+                            "Failed to send intermediate drain-loop response: {e}"
+                        );
+                    }
+
+                    // Process merged queued messages as a single turn
+                    result = self
+                        .process_user_input(message, session.clone(), thread_id, &next_content)
+                        .await;
+                }
+
+                result
             }
             Submission::SystemCommand { command, args } => {
                 tracing::debug!(

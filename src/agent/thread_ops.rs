@@ -14,7 +14,7 @@ use crate::agent::compaction::ContextCompactor;
 use crate::agent::dispatcher::{
     AgenticLoopResult, check_auth_required, execute_chat_tool_standalone, parse_auth_result,
 };
-use crate::agent::session::{PendingApproval, Session, ThreadState};
+use crate::agent::session::{MAX_PENDING_MESSAGES, PendingApproval, Session, ThreadState};
 use crate::agent::submission::SubmissionResult;
 use crate::channels::web::util::truncate_preview;
 use crate::channels::{IncomingMessage, StatusUpdate};
@@ -211,14 +211,19 @@ impl Agent {
         // Check thread state
         match thread_state {
             ThreadState::Processing => {
-                tracing::warn!(
-                    message_id = %message.id,
-                    thread_id = %thread_id,
-                    "Thread is processing, rejecting new input"
-                );
-                return Ok(SubmissionResult::error(
-                    "Turn in progress. Use /interrupt to cancel.",
-                ));
+                let mut sess = session.lock().await;
+                if let Some(thread) = sess.threads.get_mut(&thread_id)
+                    && !thread.queue_message(content.to_string())
+                {
+                    return Ok(SubmissionResult::error(format!(
+                        "Message queue full ({MAX_PENDING_MESSAGES}). Wait for the current turn to complete.",
+                    )));
+                }
+                return Ok(SubmissionResult::Ok {
+                    message: Some(
+                        "Message queued — will be processed after the current turn.".into(),
+                    ),
+                });
             }
             ThreadState::AwaitingApproval => {
                 tracing::warn!(
@@ -846,6 +851,7 @@ impl Agent {
             .get_mut(&thread_id)
             .ok_or_else(|| Error::from(crate::error::JobError::NotFound { id: thread_id }))?;
         thread.turns.clear();
+        thread.pending_messages.clear();
         thread.state = ThreadState::Idle;
 
         // Clear undo history too
@@ -1996,6 +2002,54 @@ mod tests {
             }
             _ => panic!("Expected approval rejection message"),
         }
+    }
+
+    #[test]
+    fn test_queue_cap_rejects_at_capacity() {
+        use crate::agent::session::{MAX_PENDING_MESSAGES, Thread, ThreadState};
+        use uuid::Uuid;
+
+        let mut thread = Thread::new(Uuid::new_v4());
+        thread.start_turn("processing something");
+        assert_eq!(thread.state, ThreadState::Processing);
+
+        // Fill the queue to the cap
+        for i in 0..MAX_PENDING_MESSAGES {
+            assert!(thread.queue_message(format!("msg-{}", i)));
+        }
+        assert_eq!(thread.pending_messages.len(), MAX_PENDING_MESSAGES);
+
+        // The next message should be rejected by queue_message
+        assert!(!thread.queue_message("overflow".to_string()));
+        assert_eq!(thread.pending_messages.len(), MAX_PENDING_MESSAGES);
+
+        // Verify all drain in FIFO order
+        for i in 0..MAX_PENDING_MESSAGES {
+            assert_eq!(thread.take_pending_message(), Some(format!("msg-{}", i)));
+        }
+        assert!(thread.take_pending_message().is_none());
+    }
+
+    #[test]
+    fn test_clear_clears_pending_messages() {
+        use crate::agent::session::{Thread, ThreadState};
+        use uuid::Uuid;
+
+        let mut thread = Thread::new(Uuid::new_v4());
+        thread.start_turn("processing");
+
+        thread.queue_message("pending-1".to_string());
+        thread.queue_message("pending-2".to_string());
+        assert_eq!(thread.pending_messages.len(), 2);
+
+        // Simulate what process_clear does: clear turns and pending_messages
+        thread.turns.clear();
+        thread.pending_messages.clear();
+        thread.state = ThreadState::Idle;
+
+        assert!(thread.pending_messages.is_empty());
+        assert!(thread.turns.is_empty());
+        assert_eq!(thread.state, ThreadState::Idle);
     }
 
     // Helper function to extract the approval message without needing a full Agent instance
