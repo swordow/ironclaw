@@ -20,8 +20,8 @@
 use std::borrow::Cow;
 use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use rustyline::completion::Completer;
@@ -144,8 +144,6 @@ impl ConditionalEventHandler for EscInterruptHandler {
         Some(ReadlineCmd::Interrupt)
     }
 }
-
-
 
 /// Approval action chosen by the interactive selector.
 #[derive(Clone, Copy)]
@@ -692,10 +690,7 @@ impl Channel for ReplChannel {
                 // Visual length of label (excluding ANSI escapes)
                 let label_visual_len = tool_name.len() + " requires approval ".len() + 2;
                 let rule_fill = rule_width.saturating_sub(label_visual_len + 1);
-                let top_rule = format!(
-                    "\u{2500}{label}{}",
-                    "\u{2500}".repeat(rule_fill)
-                );
+                let top_rule = format!("\u{2500}{label}{}", "\u{2500}".repeat(rule_fill));
 
                 eprintln!();
                 eprintln!("  {top_rule}");
