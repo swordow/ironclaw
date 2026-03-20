@@ -520,6 +520,7 @@ pub async fn sweep_expired_flows(registry: &PendingOAuthRegistry) {
 // ── Platform routing helpers ────────────────────────────────────────
 
 const HOSTED_STATE_PREFIX: &str = "ic2";
+const HOSTED_STATE_PREFIX_DOT: &str = "ic2.";
 const HOSTED_STATE_CHECKSUM_BYTES: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -579,7 +580,7 @@ pub fn encode_hosted_oauth_state(flow_id: &str, instance_name: Option<&str>) -> 
 /// Decode hosted OAuth state in either the new versioned format or the
 /// legacy `instance:nonce`/`nonce` forms.
 pub fn decode_hosted_oauth_state(state: &str) -> Result<DecodedHostedOAuthState, String> {
-    if let Some(rest) = state.strip_prefix(&format!("{HOSTED_STATE_PREFIX}.")) {
+    if let Some(rest) = state.strip_prefix(HOSTED_STATE_PREFIX_DOT) {
         let (payload_b64, checksum) = rest
             .rsplit_once('.')
             .ok_or("Hosted OAuth versioned state missing checksum separator")?;
@@ -1268,14 +1269,19 @@ mod tests {
             .expect_err("bad base64 should fail");
         assert!(err.contains("base64"), "unexpected error: {err}");
 
-        // Valid base64 but not JSON
+        // Valid base64 but not JSON: use correct checksum so we exercise JSON parsing
         use base64::Engine;
-        let not_json = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b"not json");
-        let err = decode_hosted_oauth_state(&format!("ic2.{not_json}.fakechecksum"))
-            .expect_err("non-JSON payload should fail (possibly checksum)");
+        use sha2::Digest;
+        let not_json_bytes = b"not json";
+        let not_json_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(not_json_bytes);
+        let digest = sha2::Sha256::digest(not_json_bytes);
+        let checksum = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(&digest[..super::HOSTED_STATE_CHECKSUM_BYTES]);
+        let err = decode_hosted_oauth_state(&format!("ic2.{not_json_b64}.{checksum}"))
+            .expect_err("non-JSON payload should fail with JSON parse error");
         assert!(
-            err.contains("checksum") || err.contains("JSON"),
-            "unexpected error: {err}"
+            err.contains("JSON"),
+            "unexpected error (expected JSON parse failure): {err}"
         );
     }
 
