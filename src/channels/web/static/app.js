@@ -23,6 +23,19 @@ let authFlowPending = false;
 let _ghostSuggestion = '';
 let currentSettingsSubtab = 'inference';
 
+// --- Streaming Debounce State ---
+let _streamBuffer = '';
+let _streamDebounceTimer = null;
+const STREAM_DEBOUNCE_MS = 50;
+
+// --- Connection Status Banner State ---
+let _connectionLostTimer = null;
+let _connectionLostAt = null;
+let _reconnectAttempts = 0;
+
+// --- Send Cooldown State ---
+let _sendCooldown = false;
+
 // --- Slash Commands ---
 
 const SLASH_COMMANDS = [
@@ -62,12 +75,25 @@ function authenticate() {
     return;
   }
 
+  // Loading state for Connect button
+  const connectBtn = document.getElementById('auth-connect-btn');
+  if (connectBtn) {
+    connectBtn.disabled = true;
+    connectBtn.textContent = 'Connecting...';
+  }
+
   // Test the token against the health-ish endpoint (chat/threads requires auth)
   apiFetch('/api/chat/threads')
     .then(() => {
       sessionStorage.setItem('ironclaw_token', token);
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'flex';
+      const authScreen = document.getElementById('auth-screen');
+      const app = document.getElementById('app');
+      // Cross-fade: fade out auth screen, then show app
+      if (authScreen) authScreen.style.opacity = '0';
+      app.style.display = 'flex';
+      app.classList.add('visible');
+      // Hide auth screen after fade-out transition completes
+      setTimeout(() => { if (authScreen) authScreen.style.display = 'none'; }, 300);
       // Strip token and log_level from URL so they're not visible in the address bar
       const cleaned = new URL(window.location);
       const urlLogLevel = cleaned.searchParams.get('log_level');
@@ -91,8 +117,14 @@ function authenticate() {
     .catch(() => {
       sessionStorage.removeItem('ironclaw_token');
       document.getElementById('auth-screen').style.display = '';
+      document.getElementById('auth-screen').style.opacity = '';
       document.getElementById('app').style.display = 'none';
       document.getElementById('auth-error').textContent = I18n.t('auth.errorInvalid');
+      // Reset Connect button on error
+      if (connectBtn) {
+        connectBtn.disabled = false;
+        connectBtn.textContent = 'Connect';
+      }
     });
 }
 
@@ -100,29 +132,8 @@ document.getElementById('token-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') authenticate();
 });
 
-// --- Static element event bindings (CSP-compliant, no inline handlers) ---
-document.getElementById('auth-connect-btn').addEventListener('click', () => authenticate());
-document.getElementById('restart-overlay').addEventListener('click', () => cancelRestart());
-document.getElementById('restart-close-btn').addEventListener('click', () => cancelRestart());
-document.getElementById('restart-cancel-btn').addEventListener('click', () => cancelRestart());
-document.getElementById('restart-confirm-btn').addEventListener('click', () => confirmRestart());
-document.getElementById('language-btn').addEventListener('click', () => toggleLanguageMenu());
-// Language option clicks handled by delegated data-action="switch-language" handler.
-document.getElementById('restart-btn').addEventListener('click', () => triggerRestart());
-document.getElementById('thread-new-btn').addEventListener('click', () => createNewThread());
-document.getElementById('thread-toggle-btn').addEventListener('click', () => toggleThreadSidebar());
-document.getElementById('assistant-thread').addEventListener('click', () => switchToAssistant());
-document.getElementById('send-btn').addEventListener('click', () => sendMessage());
-document.getElementById('memory-edit-btn').addEventListener('click', () => startMemoryEdit());
-document.getElementById('memory-save-btn').addEventListener('click', () => saveMemoryEdit());
-document.getElementById('memory-cancel-btn').addEventListener('click', () => cancelMemoryEdit());
-document.getElementById('logs-server-level').addEventListener('change', function() { setServerLogLevel(this.value); });
-document.getElementById('logs-pause-btn').addEventListener('click', () => toggleLogsPause());
-document.getElementById('logs-clear-btn').addEventListener('click', () => clearLogs());
-document.getElementById('wasm-install-btn').addEventListener('click', () => installWasmExtension());
-document.getElementById('mcp-add-btn').addEventListener('click', () => addMcpServer());
-document.getElementById('skill-search-btn').addEventListener('click', () => searchClawHub());
-document.getElementById('skill-install-btn').addEventListener('click', () => installSkillFromForm());
+// Note: main event listener registration is at the bottom of this file (search
+// "Event Listener Registration"). Do NOT add duplicate listeners here.
 
 // Auto-authenticate from URL param or saved session
 (function autoAuth() {
@@ -157,7 +168,9 @@ function apiFetch(path, options) {
   return fetch(path, opts).then((res) => {
     if (!res.ok) {
       return res.text().then(function(body) {
-        throw new Error(body || (res.status + ' ' + res.statusText));
+        const err = new Error(body || (res.status + ' ' + res.statusText));
+        err.status = res.status;
+        throw err;
       });
     }
     if (res.status === 204) return null;
@@ -263,6 +276,25 @@ function connectSSE() {
   eventSource.onopen = () => {
     document.getElementById('sse-dot').classList.remove('disconnected');
     document.getElementById('sse-status').textContent = I18n.t('status.connected');
+    _reconnectAttempts = 0;
+
+    // Dismiss connection-lost banner and show reconnected flash
+    if (_connectionLostTimer) {
+      clearTimeout(_connectionLostTimer);
+      _connectionLostTimer = null;
+    }
+    const lostBanner = document.getElementById('connection-banner');
+    if (lostBanner) {
+      const wasDisconnectedLong = _connectionLostAt && (Date.now() - _connectionLostAt > 10000);
+      lostBanner.textContent = 'Reconnected';
+      lostBanner.className = 'connection-banner connection-banner-success';
+      setTimeout(() => { lostBanner.remove(); }, 2000);
+      _connectionLostAt = null;
+      // If disconnected >10s, reload chat history to catch missed messages
+      if (wasDisconnectedLong && currentThreadId) {
+        loadHistory();
+      }
+    }
 
     // If we were restarting, close the modal and reset button now that server is back
     if (isRestarting) {
@@ -283,8 +315,28 @@ function connectSSE() {
   };
 
   eventSource.onerror = () => {
+    _reconnectAttempts++;
     document.getElementById('sse-dot').classList.add('disconnected');
     document.getElementById('sse-status').textContent = I18n.t('status.reconnecting');
+
+    // Update existing banner with attempt count
+    const existingBanner = document.getElementById('connection-banner');
+    if (existingBanner && existingBanner.classList.contains('connection-banner-warning')) {
+      existingBanner.textContent = 'Connection lost. Reconnecting... (attempt ' + _reconnectAttempts + ')';
+    }
+
+    // Start connection-lost banner timer (3s delay)
+    if (!_connectionLostTimer && !existingBanner) {
+      _connectionLostAt = _connectionLostAt || Date.now();
+      _connectionLostTimer = setTimeout(() => {
+        _connectionLostTimer = null;
+        // Only show if still disconnected
+        const dot = document.getElementById('sse-dot');
+        if (dot?.classList.contains('disconnected')) {
+          showConnectionBanner('Connection lost. Reconnecting... (attempt ' + _reconnectAttempts + ')', 'warning');
+        }
+      }, 3000);
+    }
   };
 
   eventSource.addEventListener('response', (e) => {
@@ -296,6 +348,19 @@ function connectSSE() {
       }
       return;
     }
+    // Flush any remaining streaming buffer
+    if (_streamDebounceTimer) {
+      clearInterval(_streamDebounceTimer);
+      _streamDebounceTimer = null;
+    }
+    if (_streamBuffer) {
+      appendToLastAssistant(_streamBuffer);
+      _streamBuffer = '';
+    }
+    // Remove streaming attribute from active assistant message
+    const streamingMsg = document.querySelector('.message.assistant[data-streaming="true"]');
+    if (streamingMsg) streamingMsg.removeAttribute('data-streaming');
+
     finalizeActivityGroup();
     addMessage('assistant', data.content);
     enableChatInput();
@@ -353,7 +418,31 @@ function connectSSE() {
     const data = JSON.parse(e.data);
     if (!isCurrentThread(data.thread_id)) return;
     finalizeActivityGroup();
-    appendToLastAssistant(data.content);
+
+    // Mark the active assistant message as streaming
+    const container = document.getElementById('chat-messages');
+    let lastAssistant = container.querySelector('.message.assistant:last-of-type');
+    if (!lastAssistant) {
+      addMessage('assistant', '');
+      lastAssistant = container.querySelector('.message.assistant:last-of-type');
+    }
+    if (lastAssistant) lastAssistant.setAttribute('data-streaming', 'true');
+
+    // Accumulate chunks and debounce rendering at 50ms intervals
+    _streamBuffer += data.content;
+    // Force flush when buffer exceeds 10K chars to prevent memory buildup
+    if (_streamBuffer.length > 10000) {
+      appendToLastAssistant(_streamBuffer);
+      _streamBuffer = '';
+    }
+    if (!_streamDebounceTimer) {
+      _streamDebounceTimer = setInterval(() => {
+        if (_streamBuffer) {
+          appendToLastAssistant(_streamBuffer);
+          _streamBuffer = '';
+        }
+      }, STREAM_DEBOUNCE_MS);
+    }
   });
 
   eventSource.addEventListener('status', (e) => {
@@ -420,6 +509,20 @@ function connectSSE() {
       finalizeActivityGroup();
       addMessage('system', 'Error: ' + data.message);
       enableChatInput();
+    }
+  });
+
+  eventSource.addEventListener('turn_cost', (e) => {
+    const event = JSON.parse(e.data);
+    // Add cost badge below last assistant message
+    const messages = document.querySelectorAll('.message.assistant');
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && event.tokens) {
+      const badge = document.createElement('div');
+      badge.className = 'turn-cost-badge';
+      const cost = event.cost ? ' \u00b7 $' + event.cost.toFixed(4) : '';
+      badge.textContent = event.tokens.toLocaleString() + ' tokens' + cost;
+      lastMsg.appendChild(badge);
     }
   });
 
@@ -514,6 +617,7 @@ function clearSuggestionChips() {
 
 function sendMessage() {
   clearSuggestionChips();
+  removeWelcomeCard();
   const input = document.getElementById('chat-input');
   if (authFlowPending) {
     showToast('Complete the auth step before sending chat messages.', 'info');
@@ -525,10 +629,11 @@ function sendMessage() {
     console.warn('sendMessage: no thread selected, ignoring');
     return;
   }
+  if (_sendCooldown) return;
   const content = input.value.trim();
   if (!content && stagedImages.length === 0) return;
 
-  addMessage('user', content || '(images attached)');
+  const userMsg = addMessage('user', content || '(images attached)');
   input.value = '';
   autoResizeTextarea(input);
   input.focus();
@@ -544,7 +649,35 @@ function sendMessage() {
     method: 'POST',
     body: body,
   }).catch((err) => {
-    addMessage('system', 'Failed to send: ' + err.message);
+    // Handle rate limiting (429)
+    if (err.status === 429) {
+      showToast('Rate limited. Please wait.', 'error');
+      _sendCooldown = true;
+      const sendBtn = document.getElementById('send-btn');
+      if (sendBtn) sendBtn.disabled = true;
+      setTimeout(() => {
+        _sendCooldown = false;
+        if (sendBtn) sendBtn.disabled = false;
+      }, 2000);
+    }
+    // Keep the user message in DOM, add a retry link
+    if (userMsg) {
+      userMsg.classList.add('send-failed');
+      userMsg.style.borderStyle = 'dashed';
+      const retryLink = document.createElement('a');
+      retryLink.className = 'retry-link';
+      retryLink.href = '#';
+      retryLink.textContent = 'Retry';
+      retryLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        userMsg.classList.remove('send-failed');
+        userMsg.style.borderStyle = '';
+        retryLink.remove();
+        input.value = content;
+        sendMessage();
+      });
+      userMsg.appendChild(retryLink);
+    }
   });
 }
 
@@ -828,6 +961,7 @@ function addMessage(role, content) {
   const div = createMessageElement(role, content);
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
+  return div;
 }
 
 function appendToLastAssistant(chunk) {
@@ -841,6 +975,14 @@ function appendToLastAssistant(chunk) {
     const content = last.querySelector('.message-content');
     if (content) {
       content.innerHTML = renderMarkdown(raw);
+      // Syntax highlighting for code blocks
+      if (typeof hljs !== 'undefined') {
+        requestAnimationFrame(() => {
+          content.querySelectorAll('pre code').forEach(block => {
+            hljs.highlightElement(block);
+          });
+        });
+      }
     }
     container.scrollTop = container.scrollHeight;
   } else {
@@ -1483,6 +1625,13 @@ function loadHistory(before) {
   const isPaginating = !!before;
   if (isPaginating) loadingOlder = true;
 
+  // Show skeleton while loading (only for fresh loads)
+  if (!isPaginating) {
+    const chatContainer = document.getElementById('chat-messages');
+    chatContainer.innerHTML = '';
+    chatContainer.appendChild(renderSkeleton('message', 3));
+  }
+
   apiFetch(historyUrl).then((data) => {
     const container = document.getElementById('chat-messages');
 
@@ -1499,6 +1648,10 @@ function loadHistory(before) {
         if (turn.response) {
           addMessage('assistant', turn.response);
         }
+      }
+      // Show welcome card when history is empty
+      if (data.turns.length === 0) {
+        showWelcomeCard();
       }
       // Show processing indicator if the last turn is still in-progress
       var lastTurn = data.turns.length > 0 ? data.turns[data.turns.length - 1] : null;
@@ -1546,6 +1699,25 @@ function createMessageElement(role, content) {
   const div = document.createElement('div');
   div.className = 'message ' + role;
 
+  // Message content
+  const contentEl = document.createElement('div');
+  contentEl.className = 'message-content';
+  if (role === 'user' || role === 'system') {
+    contentEl.textContent = content;
+  } else {
+    div.setAttribute('data-raw', content);
+    contentEl.innerHTML = renderMarkdown(content);
+    // Syntax highlighting for code blocks
+    if (typeof hljs !== 'undefined') {
+      requestAnimationFrame(() => {
+        contentEl.querySelectorAll('pre code').forEach(block => {
+          hljs.highlightElement(block);
+        });
+      });
+    }
+  }
+  div.appendChild(contentEl);
+
   if (role === 'assistant' || role === 'user') {
     div.classList.add('has-copy');
     div.setAttribute('data-copy-text', content);
@@ -1561,15 +1733,6 @@ function createMessageElement(role, content) {
     div.appendChild(copyBtn);
   }
 
-  const body = document.createElement('div');
-  body.className = 'message-content';
-  if (role === 'user' || role === 'system') {
-    body.textContent = content;
-  } else {
-    div.setAttribute('data-raw', content);
-    body.innerHTML = renderMarkdown(content);
-  }
-  div.appendChild(body);
   return div;
 }
 
@@ -1667,6 +1830,13 @@ function debouncedLoadThreads() {
 }
 
 function loadThreads() {
+  // Show skeleton while loading
+  const threadListEl = document.getElementById('thread-list');
+  if (threadListEl && threadListEl.children.length === 0) {
+    threadListEl.innerHTML = '';
+    threadListEl.appendChild(renderSkeleton('row', 4));
+  }
+
   apiFetch('/api/chat/threads').then((data) => {
     // Pinned assistant thread
     if (data.assistant_thread) {
@@ -1781,6 +1951,7 @@ function createNewThread() {
   apiFetch('/api/chat/thread/new', { method: 'POST' }).then((data) => {
     currentThreadId = data.id || null;
     document.getElementById('chat-messages').innerHTML = '';
+    showWelcomeCard();
     loadThreads();
   }).catch((err) => {
     showToast('Failed to create thread: ' + err.message, 'error');
@@ -1900,6 +2071,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach((p) => {
     p.classList.toggle('active', p.id === 'tab-' + tab);
   });
+  applyAriaAttributes();
 
   if (tab === 'memory') loadMemoryTree();
   if (tab === 'jobs') loadJobs();
@@ -4592,13 +4764,27 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Escape: close autocomplete, job detail, or blur input
+  // Mod+/: toggle shortcuts overlay
+  if (mod && e.key === '/') {
+    e.preventDefault();
+    toggleShortcutsOverlay();
+    return;
+  }
+
+  // Escape: close modals, autocomplete, job detail, or blur input
   if (e.key === 'Escape') {
     const acEl = document.getElementById('slash-autocomplete');
     if (acEl && acEl.style.display !== 'none') {
       hideSlashAutocomplete();
       return;
     }
+    // Close shortcuts overlay if open
+    const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+    if (shortcutsOverlay?.style.display === 'flex') {
+      shortcutsOverlay.style.display = 'none';
+      return;
+    }
+    closeModals();
     if (currentJobId) {
       closeJobDetail();
     } else if (inInput) {
@@ -4772,6 +4958,19 @@ function renderCardsSkeleton(count) {
   return html;
 }
 
+function renderSkeleton(type, count) {
+  count = count || 3;
+  var container = document.createElement('div');
+  container.className = 'skeleton-container';
+  for (var i = 0; i < count; i++) {
+    var el = document.createElement('div');
+    el.className = 'skeleton-' + type;
+    el.innerHTML = '<div class="skeleton-bar shimmer"></div>';
+    container.appendChild(el);
+  }
+  return container;
+}
+
 function loadInferenceSettings() {
   var container = document.getElementById('settings-inference-content');
   container.innerHTML = renderSettingsSkeleton(6);
@@ -4790,11 +4989,13 @@ function loadInferenceSettings() {
     };
     // Inject available model IDs as suggestions for the selected_model field
     var modelIds = (modelsData.data || []).map(function(m) { return m.id; }).filter(Boolean);
-    var llmGroup = INFERENCE_SETTINGS[0];
-    for (var i = 0; i < llmGroup.settings.length; i++) {
-      if (llmGroup.settings[i].key === 'selected_model') {
-        llmGroup.settings[i].suggestions = modelIds;
-        break;
+    if (modelIds.length > 0) {
+      var llmGroup = INFERENCE_SETTINGS[0];
+      for (var i = 0; i < llmGroup.settings.length; i++) {
+        if (llmGroup.settings[i].key === 'selected_model') {
+          llmGroup.settings[i].suggestions = modelIds;
+          break;
+        }
       }
     }
     container.innerHTML = '';
@@ -5332,6 +5533,181 @@ function showToast(message, type) {
     toast.addEventListener('transitionend', () => toast.remove());
   }, 4000);
 }
+
+// --- Welcome Card (Phase 4.2) ---
+
+function showWelcomeCard() {
+  const container = document.getElementById('chat-messages');
+  if (!container || container.querySelector('.welcome-card')) return;
+  const card = document.createElement('div');
+  card.className = 'welcome-card';
+
+  const heading = document.createElement('h2');
+  heading.className = 'welcome-heading';
+  heading.textContent = I18n.t('welcome.heading');
+  card.appendChild(heading);
+
+  const desc = document.createElement('p');
+  desc.className = 'welcome-description';
+  desc.textContent = I18n.t('welcome.description');
+  card.appendChild(desc);
+
+  const chips = document.createElement('div');
+  chips.className = 'welcome-chips';
+
+  const suggestions = [
+    { key: 'welcome.runTool', fallback: 'Run a tool' },
+    { key: 'welcome.checkJobs', fallback: 'Check job status' },
+    { key: 'welcome.searchMemory', fallback: 'Search memory' },
+    { key: 'welcome.manageRoutines', fallback: 'Manage routines' },
+    { key: 'welcome.systemStatus', fallback: 'System status' },
+    { key: 'welcome.writeCode', fallback: 'Write code' },
+  ];
+  suggestions.forEach(({ key, fallback }) => {
+    const chip = document.createElement('button');
+    chip.className = 'welcome-chip';
+    chip.textContent = I18n.t(key) || fallback;
+    chip.addEventListener('click', () => sendSuggestion(chip));
+    chips.appendChild(chip);
+  });
+
+  card.appendChild(chips);
+  container.appendChild(card);
+}
+
+function renderEmptyState({ icon, title, hint, action }) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'empty-state-card';
+
+  if (icon) {
+    const iconEl = document.createElement('div');
+    iconEl.className = 'empty-state-icon';
+    iconEl.textContent = icon;
+    wrapper.appendChild(iconEl);
+  }
+
+  if (title) {
+    const titleEl = document.createElement('div');
+    titleEl.className = 'empty-state-title';
+    titleEl.textContent = title;
+    wrapper.appendChild(titleEl);
+  }
+
+  if (hint) {
+    const hintEl = document.createElement('div');
+    hintEl.className = 'empty-state-hint';
+    hintEl.textContent = hint;
+    wrapper.appendChild(hintEl);
+  }
+
+  if (action) {
+    const btn = document.createElement('button');
+    btn.className = 'empty-state-action';
+    btn.textContent = action.label || 'Go';
+    if (action.onClick) btn.addEventListener('click', action.onClick);
+    wrapper.appendChild(btn);
+  }
+
+  return wrapper;
+}
+
+function sendSuggestion(btn) {
+  const textarea = document.getElementById('chat-input');
+  if (textarea) {
+    textarea.value = btn.textContent;
+    sendMessage();
+  }
+}
+
+function removeWelcomeCard() {
+  const card = document.querySelector('.welcome-card');
+  if (card) card.remove();
+}
+
+// --- Connection Status Banner (Phase 4.1) ---
+
+function showConnectionBanner(message, type) {
+  // Remove existing banner if any
+  const existing = document.getElementById('connection-banner');
+  if (existing) existing.remove();
+
+  const chatPanel = document.getElementById('tab-chat');
+  if (!chatPanel) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'connection-banner';
+  banner.className = 'connection-banner connection-banner-' + type;
+  banner.textContent = message;
+  chatPanel.insertBefore(banner, chatPanel.firstChild);
+}
+
+// --- Keyboard Shortcut Helpers (Phase 7.4) ---
+
+function focusMemorySearch() {
+  const memSearch = document.getElementById('memory-search');
+  if (memSearch) {
+    if (currentTab !== 'memory') switchTab('memory');
+    memSearch.focus();
+  }
+}
+
+function toggleShortcutsOverlay() {
+  let overlay = document.getElementById('shortcuts-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'shortcuts-overlay';
+    overlay.className = 'shortcuts-overlay';
+    overlay.style.display = 'none';
+    overlay.innerHTML =
+      '<div class="shortcuts-content">'
+      + '<h3>Keyboard Shortcuts</h3>'
+      + '<div class="shortcut-row"><kbd>Ctrl/Cmd + 1-5</kbd> Switch tabs</div>'
+      + '<div class="shortcut-row"><kbd>Ctrl/Cmd + N</kbd> New thread</div>'
+      + '<div class="shortcut-row"><kbd>Ctrl/Cmd + K</kbd> Focus search/input</div>'
+      + '<div class="shortcut-row"><kbd>Ctrl/Cmd + /</kbd> Toggle this overlay</div>'
+      + '<div class="shortcut-row"><kbd>Escape</kbd> Close modals</div>'
+      + '<button class="shortcuts-close">Close</button>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('.shortcuts-close').addEventListener('click', () => {
+      overlay.style.display = 'none';
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.style.display = 'none';
+    });
+  }
+  overlay.style.display = overlay.style.display === 'flex' ? 'none' : 'flex';
+}
+
+function closeModals() {
+  // Close shortcuts overlay
+  const shortcutsOverlay = document.getElementById('shortcuts-overlay');
+  if (shortcutsOverlay) shortcutsOverlay.style.display = 'none';
+
+  // Close restart confirmation modal
+  const restartModal = document.getElementById('restart-confirm-modal');
+  if (restartModal) restartModal.style.display = 'none';
+}
+
+// --- ARIA Accessibility (Phase 5.2) ---
+
+function applyAriaAttributes() {
+  const tabBar = document.querySelector('.tab-bar');
+  if (tabBar) tabBar.setAttribute('role', 'tablist');
+
+  document.querySelectorAll('.tab-bar button[data-tab]').forEach(btn => {
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
+  });
+
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-hidden', panel.classList.contains('active') ? 'false' : 'true');
+  });
+}
+
+// Apply ARIA attributes on initial load
+applyAriaAttributes();
 
 // --- Utilities ---
 

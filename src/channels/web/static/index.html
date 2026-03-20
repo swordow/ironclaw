@@ -25,6 +25,8 @@
     integrity="sha384-pN9zSKOnTZwXRtYZAu0PBPEgR2B7DOC1aeLxQ33oJ0oy5iN1we6gm57xldM2irDG"
     crossorigin="anonymous"
   ></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css" integrity="sha384-nPUMD0OGWP8WN5HZqXBhBuaYYraH1FbflEfCt2xhUfiEBiZB/ccPbQefNnGMwWOE" crossorigin="anonymous">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha384-xBsHBR6BS/LSlO+cYiY6OJnFE/Q2Bif4oMCwmTAFDBXS/GgQe2q20B6LBpI6UJQ" crossorigin="anonymous"></script>
 </head>
 <body>
   <!-- Auth Screen -->
@@ -40,7 +42,7 @@
         <button id="auth-connect-btn" data-i18n="auth.connect">Connect</button>
       </div>
       <div id="auth-error"></div>
-      <p class="auth-hint" data-i18n="auth.hint">Enter the GATEWAY_AUTH_TOKEN from your .env configuration.</p>
+      <p class="auth-hint" data-i18n="auth.hint">Paste the token shown in your terminal to connect.</p>
     </div>
   </div>
 
@@ -90,12 +92,12 @@
   <!-- Main App (hidden until authenticated) -->
   <div id="app">
     <!-- Tab Bar -->
-    <div class="tab-bar">
-      <button class="active" data-tab="chat" data-i18n="tab.chat">Chat</button>
-      <button data-tab="memory" data-i18n="tab.memory">Memory</button>
-      <button data-tab="jobs" data-i18n="tab.jobs">Jobs</button>
-      <button data-tab="routines" data-i18n="tab.routines">Routines</button>
-      <button data-tab="settings" data-i18n="tab.settings">Settings</button>
+    <div class="tab-bar" role="tablist">
+      <button class="active" data-tab="chat" data-i18n="tab.chat" role="tab" aria-selected="true">Chat</button>
+      <button data-tab="memory" data-i18n="tab.memory" role="tab" aria-selected="false">Memory</button>
+      <button data-tab="jobs" data-i18n="tab.jobs" role="tab" aria-selected="false">Jobs</button>
+      <button data-tab="routines" data-i18n="tab.routines" role="tab" aria-selected="false">Routines</button>
+      <button data-tab="settings" data-i18n="tab.settings" role="tab" aria-selected="false">Settings</button>
       <div class="spacer"></div>
 
       <!-- Language Switcher -->
@@ -122,7 +124,7 @@
         <div class="gateway-popover" id="gateway-popover"></div>
       </div>
       <button class="restart-btn" id="restart-btn" data-i18n="status.restartTooltip"
-        data-i18n-attr="title" title="Gracefully restart the process" style="display: none;">
+        data-i18n-attr="title" title="Gracefully restart the process" aria-label="Restart" style="display: none;">
         <svg id="restart-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 4v6h-6"></path>
           <path d="M1 20v-6h6"></path>
@@ -133,7 +135,7 @@
     </div>
 
     <!-- Chat Tab -->
-    <div class="tab-panel active" id="tab-chat">
+    <div class="tab-panel active" id="tab-chat" role="tabpanel">
       <div class="thread-sidebar" id="thread-sidebar">
         <div class="assistant-item" id="assistant-thread">
           <span class="assistant-label" id="assistant-label" data-i18n="chat.assistant">Assistant</span>
@@ -143,14 +145,14 @@
           <span data-i18n="chat.conversations">Conversations</span>
           <div class="spacer"></div>
           <button class="thread-new-btn" id="thread-new-btn" data-i18n="chat.newThread" data-i18n-attr="title"
-            title="New thread (Ctrl/Cmd+N)">+</button>
+            title="New thread (Ctrl/Cmd+N)" aria-label="New thread">+</button>
           <button class="thread-toggle-btn" id="thread-toggle-btn" data-i18n="chat.toggleSidebar"
-            data-i18n-attr="title" title="Toggle sidebar">&laquo;</button>
+            data-i18n-attr="title" title="Toggle sidebar" aria-label="Toggle sidebar">&laquo;</button>
         </div>
         <div class="thread-list" id="thread-list"></div>
       </div>
       <div class="chat-container">
-        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-messages" id="chat-messages" aria-live="polite" aria-relevant="additions"></div>
         <div id="slash-autocomplete" class="slash-autocomplete" style="display:none"></div>
         <div id="suggestion-chips" class="suggestion-chips" style="display:none"></div>
         <div class="chat-input">
@@ -168,7 +170,7 @@
     </div>
 
     <!-- Memory Tab -->
-    <div class="tab-panel" id="tab-memory">
+    <div class="tab-panel" id="tab-memory" role="tabpanel">
       <div class="memory-container">
         <div class="memory-sidebar">
           <div class="search-box">
@@ -196,7 +198,7 @@
     </div>
 
     <!-- Jobs Tab -->
-    <div class="tab-panel" id="tab-jobs">
+    <div class="tab-panel" id="tab-jobs" role="tabpanel">
       <div class="jobs-container">
         <div class="jobs-summary" id="jobs-summary"></div>
         <table class="jobs-table" id="jobs-table">
@@ -217,7 +219,7 @@
     </div>
 
     <!-- Logs Tab -->
-    <div class="tab-panel" id="tab-logs">
+    <div class="tab-panel" id="tab-logs" role="tabpanel">
       <div class="logs-container">
         <div class="logs-toolbar">
           <select id="logs-server-level" title="Server-side log level (changes what the server emits)">
@@ -243,7 +245,7 @@
     </div>
 
     <!-- Routines Tab -->
-    <div class="tab-panel" id="tab-routines">
+    <div class="tab-panel" id="tab-routines" role="tabpanel">
       <div class="routines-container">
         <div class="routines-summary" id="routines-summary"></div>
         <table class="routines-table" id="routines-table">
@@ -269,7 +271,7 @@
     </div>
 
     <!-- Settings Tab -->
-    <div class="tab-panel" id="tab-settings">
+    <div class="tab-panel" id="tab-settings" role="tabpanel">
       <div class="settings-layout">
         <div class="settings-sidebar">
           <button class="settings-subtab active" data-settings-subtab="inference" data-i18n="settings.inference">Inference</button>
@@ -391,7 +393,19 @@
     </div>
   </div>
 
-  <div id="toasts"></div>
+  <!-- Confirmation Modal -->
+  <div id="confirm-modal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal">
+      <h3 id="confirm-modal-title"></h3>
+      <p id="confirm-modal-message"></p>
+      <div class="modal-actions">
+        <button id="confirm-modal-cancel-btn" class="btn-secondary" data-i18n="btn.cancel">Cancel</button>
+        <button id="confirm-modal-btn" class="btn-danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts" aria-live="assertive"></div>
   <script src="/app.js"></script>
   <script src="/i18n-app.js"></script>
 </body>

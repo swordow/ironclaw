@@ -333,6 +333,12 @@ pub enum StatusUpdate {
     },
     /// Suggested follow-up messages for the user.
     Suggestions { suggestions: Vec<String> },
+    /// Per-turn token usage and cost summary (shown as subtle metadata).
+    TurnCost {
+        input_tokens: u32,
+        output_tokens: u32,
+        cost_usd: String,
+    },
 }
 
 impl StatusUpdate {
