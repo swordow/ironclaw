@@ -335,8 +335,8 @@ pub enum StatusUpdate {
     Suggestions { suggestions: Vec<String> },
     /// Per-turn token usage and cost summary (shown as subtle metadata).
     TurnCost {
-        input_tokens: u32,
-        output_tokens: u32,
+        input_tokens: u64,
+        output_tokens: u64,
         cost_usd: String,
     },
 }

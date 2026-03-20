@@ -516,8 +516,8 @@ impl Agent {
                         .send_status(
                             &message.channel,
                             StatusUpdate::TurnCost {
-                                input_tokens: total_in as u32,
-                                output_tokens: total_out as u32,
+                                input_tokens: total_in,
+                                output_tokens: total_out,
                                 cost_usd: format!("${:.4}", total_cost),
                             },
                             &message.metadata,

@@ -257,8 +257,8 @@ pub enum SseEvent {
     /// Per-turn token usage and cost summary.
     #[serde(rename = "turn_cost")]
     TurnCost {
-        input_tokens: u32,
-        output_tokens: u32,
+        input_tokens: u64,
+        output_tokens: u64,
         cost_usd: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         thread_id: Option<String>,

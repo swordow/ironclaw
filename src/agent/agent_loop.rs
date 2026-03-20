@@ -715,9 +715,6 @@ impl Agent {
             None
         };
 
-        // Extract engine ref for use in message loop
-        let _routine_engine_for_loop = routine_handle.as_ref().map(|(_, e)| Arc::clone(e));
-
         // Bootstrap phase 2: register the thread in session manager and
         // broadcast the greeting via SSE for any clients already connected.
         // The greeting was already persisted to DB before start_all(), so
