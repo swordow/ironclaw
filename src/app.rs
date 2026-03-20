@@ -25,7 +25,7 @@ use crate::tools::ToolRegistry;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
-use crate::workspace::{EmbeddingProvider, Workspace};
+use crate::workspace::{EmbeddingCacheConfig, EmbeddingProvider, Workspace};
 
 /// Fully initialized application components, ready for channel wiring
 /// and agent construction.
@@ -313,10 +313,13 @@ impl AppBuilder {
 
         // Register memory tools if database is available
         let workspace = if let Some(ref db) = self.db {
+            let emb_cache_config = EmbeddingCacheConfig {
+                max_entries: self.config.embeddings.cache_size,
+            };
             let mut ws = Workspace::new_with_db(&self.config.owner_id, db.clone())
                 .with_search_config(&self.config.search);
             if let Some(ref emb) = embeddings {
-                ws = ws.with_embeddings(emb.clone());
+                ws = ws.with_embeddings_cached(emb.clone(), emb_cache_config);
             }
             let ws = Arc::new(ws);
             tools.register_memory_tools(Arc::clone(&ws));
@@ -719,6 +722,17 @@ impl AppBuilder {
             catalog_entries,
             dev_loaded_tool_names,
         ) = self.init_extensions(&tools, &hooks).await?;
+
+        // Load bootstrap-completed flag from settings so that existing users
+        // who already completed onboarding don't re-get bootstrap injection.
+        if let Some(ref ws) = workspace {
+            let toml_path = crate::settings::Settings::default_toml_path();
+            if let Ok(Some(settings)) = crate::settings::Settings::load_toml(&toml_path)
+                && settings.profile_onboarding_completed
+            {
+                ws.mark_bootstrap_completed();
+            }
+        }
 
         // Seed workspace and backfill embeddings
         if let Some(ref ws) = workspace {
