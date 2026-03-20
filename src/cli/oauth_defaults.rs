@@ -520,7 +520,6 @@ pub async fn sweep_expired_flows(registry: &PendingOAuthRegistry) {
 // ── Platform routing helpers ────────────────────────────────────────
 
 const HOSTED_STATE_PREFIX: &str = "ic2";
-const HOSTED_STATE_PREFIX_DOT: &str = "ic2.";
 const HOSTED_STATE_CHECKSUM_BYTES: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -580,7 +579,7 @@ pub fn encode_hosted_oauth_state(flow_id: &str, instance_name: Option<&str>) -> 
 /// Decode hosted OAuth state in either the new versioned format or the
 /// legacy `instance:nonce`/`nonce` forms.
 pub fn decode_hosted_oauth_state(state: &str) -> Result<DecodedHostedOAuthState, String> {
-    if let Some(rest) = state.strip_prefix(HOSTED_STATE_PREFIX_DOT) {
+    if let Some(rest) = state.strip_prefix(&format!("{HOSTED_STATE_PREFIX}.")) {
         let (payload_b64, checksum) = rest
             .rsplit_once('.')
             .ok_or("Hosted OAuth versioned state missing checksum separator")?;
