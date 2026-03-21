@@ -361,6 +361,35 @@ mod tests {
         assert_eq!(unwrapped2, json2);
     }
 
+    /// Regression gate for PR #598: JSON content with XML metacharacters must
+    /// survive the full wrap -> unwrap -> serde_json::from_str pipeline intact.
+    #[test]
+    fn test_wrap_unwrap_round_trip_json_parses_intact() {
+        let config = SafetyConfig {
+            max_output_length: 100_000,
+            injection_check_enabled: true,
+        };
+        let safety = SafetyLayer::new(&config);
+
+        // SQL with angle brackets and ampersand — the exact case that broke in #598
+        let json_input = r#"{"query": "SELECT * FROM t WHERE a < 10 AND b > 5", "op": "a & b"}"#;
+        let original: serde_json::Value =
+            serde_json::from_str(json_input).expect("test input is valid JSON");
+
+        let wrapped = safety.wrap_for_llm("sql_tool", json_input);
+        let unwrapped =
+            SafetyLayer::unwrap_tool_output(&wrapped).expect("should unwrap tool output");
+
+        // The unwrapped content must still parse as identical JSON
+        let parsed: serde_json::Value =
+            serde_json::from_str(&unwrapped).expect("unwrapped content must be valid JSON");
+        assert_eq!(parsed, original);
+
+        // Also verify the LLM sees raw content (no entity escaping) inside the wrapper
+        assert!(wrapped.contains(r#"a < 10 AND b > 5"#));
+        assert!(wrapped.contains(r#"a & b"#));
+    }
+
     #[test]
     fn test_wrap_unwrap_round_trip_with_injection_attempt() {
         let config = SafetyConfig {
