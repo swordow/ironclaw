@@ -1162,6 +1162,20 @@ impl Agent {
                     command,
                     message.channel
                 );
+                // /reasoning needs session access, handle it here.
+                if command == "reasoning" {
+                    let result = self
+                        .handle_reasoning_command(&args, &session, thread_id)
+                        .await;
+                    return match result {
+                        SubmissionResult::Response { content } => Ok(Some(content)),
+                        SubmissionResult::Ok { message } => Ok(message),
+                        SubmissionResult::Error { message } => {
+                            Ok(Some(format!("Error: {}", message)))
+                        }
+                        _ => Ok(None),
+                    };
+                }
                 // Authorization checks (including restart channel check) are enforced in handle_system_command
                 self.handle_system_command(&command, &args, &message.channel)
                     .await

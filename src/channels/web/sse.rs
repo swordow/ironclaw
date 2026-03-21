@@ -145,6 +145,8 @@ impl SseManager {
                     SseEvent::ImageGenerated { .. } => "image_generated",
                     SseEvent::Suggestions { .. } => "suggestions",
                     SseEvent::ExtensionStatus { .. } => "extension_status",
+                    SseEvent::ReasoningUpdate { .. } => "reasoning_update",
+                    SseEvent::JobReasoning { .. } => "job_reasoning",
                 };
                 Ok(Event::default().event(event_type).data(data))
             });

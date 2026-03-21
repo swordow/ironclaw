@@ -49,6 +49,7 @@ pub fn build_turns_from_db_messages(
                 started_at: msg.created_at.to_rfc3339(),
                 completed_at: None,
                 tool_calls: Vec::new(),
+                narrative: None,
             };
 
             // Check if next message is a tool_calls record
@@ -66,6 +67,7 @@ pub fn build_turns_from_db_messages(
                                 has_error: c.get("error").is_some(),
                                 result_preview: c["result_preview"].as_str().map(String::from),
                                 error: c["error"].as_str().map(String::from),
+                                rationale: c["rationale"].as_str().map(String::from),
                             })
                             .collect();
                     }
@@ -105,6 +107,7 @@ pub fn build_turns_from_db_messages(
                 started_at: msg.created_at.to_rfc3339(),
                 completed_at: Some(msg.created_at.to_rfc3339()),
                 tool_calls: Vec::new(),
+                narrative: None,
             });
             turn_number += 1;
         }

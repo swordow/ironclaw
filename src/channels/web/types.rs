@@ -63,6 +63,9 @@ pub struct TurnInfo {
     pub started_at: String,
     pub completed_at: Option<String>,
     pub tool_calls: Vec<ToolCallInfo>,
+    /// Agent's reasoning narrative for this turn.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narrative: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,6 +77,9 @@ pub struct ToolCallInfo {
     pub result_preview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Agent's reasoning for choosing this tool.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -262,6 +268,30 @@ pub enum SseEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
     },
+
+    /// Agent reasoning update (why it chose specific tools).
+    #[serde(rename = "reasoning_update")]
+    ReasoningUpdate {
+        narrative: String,
+        decisions: Vec<ToolDecisionDto>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thread_id: Option<String>,
+    },
+
+    /// Reasoning update for a sandbox job.
+    #[serde(rename = "job_reasoning")]
+    JobReasoning {
+        job_id: String,
+        narrative: String,
+        decisions: Vec<ToolDecisionDto>,
+    },
+}
+
+/// A single tool decision in a reasoning update (SSE DTO).
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolDecisionDto {
+    pub tool_name: String,
+    pub rationale: String,
 }
 
 // --- Memory ---
@@ -760,6 +790,8 @@ impl WsServerMessage {
             SseEvent::ImageGenerated { .. } => "image_generated",
             SseEvent::Suggestions { .. } => "suggestions",
             SseEvent::ExtensionStatus { .. } => "extension_status",
+            SseEvent::ReasoningUpdate { .. } => "reasoning_update",
+            SseEvent::JobReasoning { .. } => "job_reasoning",
         };
         let data = serde_json::to_value(event).unwrap_or(serde_json::Value::Null);
         WsServerMessage::Event {

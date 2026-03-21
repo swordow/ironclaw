@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast};
 use uuid::Uuid;
 
-use crate::channels::web::types::SseEvent;
+use crate::channels::web::types::{SseEvent, ToolDecisionDto};
 use crate::db::Database;
 use crate::llm::{CompletionRequest, LlmProvider, ToolCompletionRequest};
 use crate::orchestrator::auth::{TokenStore, worker_auth_middleware};
@@ -340,6 +340,34 @@ async fn job_event_handler(
             // gain context/memory tracking capabilities.
             fallback_deliverable: payload.data.get("fallback_deliverable").cloned(),
         },
+        "reasoning" => {
+            let narrative = payload
+                .data
+                .get("narrative")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let decisions = payload
+                .data
+                .get("decisions")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|d| {
+                            Some(ToolDecisionDto {
+                                tool_name: d.get("tool_name")?.as_str()?.to_string(),
+                                rationale: d.get("rationale")?.as_str()?.to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            SseEvent::JobReasoning {
+                job_id: job_id_str,
+                narrative,
+                decisions,
+            }
+        }
         _ => SseEvent::JobStatus {
             job_id: job_id_str,
             message: payload

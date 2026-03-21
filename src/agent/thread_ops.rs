@@ -682,6 +682,13 @@ impl Agent {
                 if let Some(ref error) = tc.error {
                     obj["error"] = serde_json::Value::String(truncate_preview(error, 200));
                 }
+                if let Some(ref rationale) = tc.rationale {
+                    obj["rationale"] =
+                        serde_json::Value::String(truncate_preview(rationale, 500));
+                }
+                if let Some(ref tool_call_id) = tc.tool_call_id {
+                    obj["tool_call_id"] = serde_json::Value::String(tool_call_id.clone());
+                }
                 obj
             })
             .collect();
@@ -1753,6 +1760,7 @@ fn rebuild_chat_messages_from_db(
                                     .get("parameters")
                                     .cloned()
                                     .unwrap_or(serde_json::json!({})),
+                                reasoning: None,
                             })
                             .collect();
 

@@ -3061,6 +3061,11 @@ fn status_to_wit(
         },
         // Suggestions are web-gateway-only; skip for WASM channels
         StatusUpdate::Suggestions { .. } => return None,
+        StatusUpdate::ReasoningUpdate { narrative, .. } => wit_channel::StatusUpdate {
+            status: wit_channel::StatusType::Status,
+            message: narrative.clone(),
+            metadata_json,
+        },
     })
 }
 
