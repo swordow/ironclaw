@@ -83,3 +83,49 @@ async fn test_resolve_unknown_correlation_id_returns_error() {
         .await;
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn test_sweep_removes_expired_entries() {
+    let (tx, mut rx) = mpsc::channel::<IncomingMessage>(16);
+    // 0-second TTL so everything expires immediately
+    let registry = ToolCallbackRegistry::new(Duration::from_secs(0));
+
+    let meta = CallbackMetadata {
+        tool_name: "wallet_transact".into(),
+        user_id: "user-1".into(),
+        thread_id: None,
+        channel: "web".into(),
+    };
+
+    registry.register("corr-expired".into(), meta).await;
+
+    // Small delay to ensure expiry
+    tokio::time::sleep(Duration::from_millis(10)).await;
+
+    let expired_count = registry.sweep_expired(&tx).await;
+    assert_eq!(expired_count, 1);
+    assert!(!registry.is_pending("corr-expired").await);
+
+    // Should have injected a timeout message
+    let msg = rx.try_recv().unwrap();
+    assert!(msg.content.contains("timed out"));
+}
+
+#[tokio::test]
+async fn test_sweep_preserves_non_expired_entries() {
+    let (tx, _rx) = mpsc::channel::<IncomingMessage>(16);
+    let registry = ToolCallbackRegistry::new(Duration::from_secs(3600));
+
+    let meta = CallbackMetadata {
+        tool_name: "wallet_transact".into(),
+        user_id: "user-1".into(),
+        thread_id: None,
+        channel: "web".into(),
+    };
+
+    registry.register("corr-fresh".into(), meta).await;
+
+    let expired_count = registry.sweep_expired(&tx).await;
+    assert_eq!(expired_count, 0);
+    assert!(registry.is_pending("corr-fresh").await);
+}

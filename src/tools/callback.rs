@@ -28,7 +28,6 @@ pub enum CallbackError {
 #[derive(Debug)]
 struct PendingEntry {
     metadata: CallbackMetadata,
-    #[allow(dead_code)]
     registered_at: Instant,
 }
 
@@ -100,5 +99,73 @@ impl ToolCallbackRegistry {
                 CallbackError::InjectionFailed(e.to_string())
             },
         )
+    }
+
+    /// Remove expired entries and inject timeout messages.
+    /// Returns the number of expired entries swept.
+    pub async fn sweep_expired(
+        &self,
+        inject_tx: &mpsc::Sender<IncomingMessage>,
+    ) -> usize {
+        let expired: Vec<(String, PendingEntry)> = {
+            let mut pending = self.pending.write().await;
+            let now = Instant::now();
+            let expired_ids: Vec<String> = pending
+                .iter()
+                .filter(|(_, entry)| now.duration_since(entry.registered_at) >= self.ttl)
+                .map(|(id, _)| id.clone())
+                .collect();
+
+            expired_ids
+                .iter()
+                .filter_map(|id| pending.remove(id).map(|entry| (id.clone(), entry)))
+                .collect()
+        };
+
+        let count = expired.len();
+        for (correlation_id, entry) in expired {
+            let content = format!(
+                "Transaction {}: timed out waiting for approval (tool: {})",
+                correlation_id, entry.metadata.tool_name
+            );
+            let mut message = IncomingMessage::new(
+                entry.metadata.channel,
+                entry.metadata.user_id,
+                content,
+            )
+            .into_internal();
+
+            if let Some(tid) = entry.metadata.thread_id {
+                message = message.with_thread(tid);
+            }
+
+            if let Err(e) = inject_tx.send(message).await {
+                tracing::warn!(
+                    correlation_id,
+                    "failed to inject timeout message: {}", e
+                );
+            }
+        }
+        count
+    }
+
+    /// Spawn a background task that periodically sweeps expired entries.
+    /// Returns a JoinHandle that can be used to abort the task.
+    pub fn start_sweep_task(
+        self: &std::sync::Arc<Self>,
+        inject_tx: mpsc::Sender<IncomingMessage>,
+        interval: Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        let registry = std::sync::Arc::clone(self);
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            loop {
+                ticker.tick().await;
+                let count = registry.sweep_expired(&inject_tx).await;
+                if count > 0 {
+                    tracing::info!(count, "swept expired callback entries");
+                }
+            }
+        })
     }
 }
