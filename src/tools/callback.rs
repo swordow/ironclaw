@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use tokio::sync::mpsc;
+
+use crate::channels::IncomingMessage;
+
 /// Metadata stored alongside a pending async tool result.
 #[derive(Debug, Clone)]
 pub struct CallbackMetadata {
@@ -10,10 +14,19 @@ pub struct CallbackMetadata {
     pub channel: String,
 }
 
+/// Error type for callback resolution.
+#[derive(Debug, thiserror::Error)]
+pub enum CallbackError {
+    #[error("unknown correlation ID: {0}")]
+    UnknownCorrelationId(String),
+
+    #[error("failed to inject message: {0}")]
+    InjectionFailed(String),
+}
+
 /// Internal entry with timestamp for TTL expiry.
 #[derive(Debug)]
 struct PendingEntry {
-    #[allow(dead_code)]
     metadata: CallbackMetadata,
     #[allow(dead_code)]
     registered_at: Instant,
@@ -57,5 +70,35 @@ impl ToolCallbackRegistry {
     /// Returns the configured TTL.
     pub fn ttl(&self) -> Duration {
         self.ttl
+    }
+
+    /// Resolve a pending result, injecting an `IncomingMessage` into the channel system.
+    /// Removes the entry from the pending map on success.
+    pub async fn resolve(
+        &self,
+        correlation_id: &str,
+        result: String,
+        inject_tx: &mpsc::Sender<IncomingMessage>,
+    ) -> Result<(), CallbackError> {
+        let entry = self
+            .pending
+            .write()
+            .await
+            .remove(correlation_id)
+            .ok_or_else(|| CallbackError::UnknownCorrelationId(correlation_id.to_string()))?;
+
+        let mut message =
+            IncomingMessage::new(entry.metadata.channel, entry.metadata.user_id, result)
+                .into_internal();
+
+        if let Some(tid) = entry.metadata.thread_id {
+            message = message.with_thread(tid);
+        }
+
+        inject_tx.send(message).await.map_err(
+            |e: mpsc::error::SendError<IncomingMessage>| {
+                CallbackError::InjectionFailed(e.to_string())
+            },
+        )
     }
 }
