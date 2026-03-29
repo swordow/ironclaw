@@ -160,8 +160,8 @@ impl Tool for WalletTransactTool {
                         The wallet owner must confirm on their device."
         });
 
-        if let Some(d) = data {
-            result["data"] = json!(d);
+        if data.is_some() {
+            result["data_present"] = json!(true);
         }
         if let Some(cid) = chain_id {
             result["chain_id"] = json!(cid);

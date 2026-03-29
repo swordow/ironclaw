@@ -64,12 +64,8 @@ impl Tool for WalletPairTool {
         let start = std::time::Instant::now();
 
         // Check if already paired — return address info directly.
-        if self.session.is_paired().await {
-            let address = self
-                .session
-                .active_address()
-                .await
-                .unwrap_or_default();
+        // Use active_address() directly to avoid TOCTOU race with is_paired().
+        if let Some(address) = self.session.active_address().await {
             let chain_id = self.session.active_chain_id().await.unwrap_or(1);
             let content = format!(
                 "Already paired with wallet {} on chain {}",

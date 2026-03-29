@@ -825,9 +825,9 @@ async fn async_main() -> anyhow::Result<()> {
             Arc::clone(&components.callback_registry),
             channels.inject_sender(),
         );
-        listener.start();
+        let _listener_handle = listener.start();
 
-        components.callback_registry.start_sweep_task(
+        let _sweep_handle = components.callback_registry.start_sweep_task(
             channels.inject_sender(),
             std::time::Duration::from_secs(30),
         );
