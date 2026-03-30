@@ -58,12 +58,12 @@ impl Tool for WalletPairTool {
 
     async fn execute(
         &self,
-        _params: serde_json::Value,
+        params: serde_json::Value,
         _ctx: &JobContext,
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
 
-        // Check if already paired — return address info directly.
+        // Check if already paired -- return address info directly.
         // Use active_address() directly to avoid TOCTOU race with is_paired().
         if let Some(address) = self.session.active_address().await {
             let chain_id = self.session.active_chain_id().await.unwrap_or(1);
@@ -74,11 +74,18 @@ impl Tool for WalletPairTool {
             return Ok(ToolOutput::text(content, start.elapsed()));
         }
 
-        // WalletConnect integration not yet implemented.
-        Err(ToolError::ExecutionFailed(
-            "WalletConnect pairing not yet integrated. \
-             This is a placeholder — the WalletConnect v2 relay client is not wired up yet."
-                .into(),
+        let chain_id = params
+            .get("chain_id")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1);
+
+        let uri = self.session.initiate_pairing(chain_id).await?;
+
+        Ok(ToolOutput::text(
+            format!(
+                "Pairing initiated. Present this WalletConnect URI to the user:\n{uri}"
+            ),
+            start.elapsed(),
         ))
     }
 }

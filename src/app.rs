@@ -419,7 +419,9 @@ impl AppBuilder {
 
         let wc_session = if self.config.ethereum.enabled {
             let session = Arc::new(
-                crate::tools::builtin::ethereum::WalletConnectSession::new_disconnected(),
+                crate::tools::builtin::ethereum::WalletConnectSession::new(
+                    self.config.ethereum.walletconnect_project_id.clone(),
+                ),
             );
             tools.register_ethereum_tools(
                 Arc::clone(&session),

@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
+use walletconnect_client::prelude::Event;
 
 use crate::channels::IncomingMessage;
 use crate::tools::callback::ToolCallbackRegistry;
 
-use super::session::WalletConnectSession;
+use super::session::{SessionStatus, WalletConnectSession};
 
 /// Background listener that monitors the WalletConnect relay for wallet
-/// responses (transaction approvals/rejections) and resolves them via
-/// the callback registry.
+/// events (connection, disconnection, account/chain changes, transaction
+/// responses) and updates session state accordingly.
 pub struct WalletConnectListener {
     session: Arc<WalletConnectSession>,
     #[allow(dead_code)]
@@ -34,26 +35,43 @@ impl WalletConnectListener {
     /// Start the background listener. Returns a JoinHandle.
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            tracing::info!("WalletConnect listener started (stub - awaiting library integration)");
-
-            // TODO: Replace with actual WalletConnect relay subscription.
-            // The real implementation will:
-            // 1. Connect to the WalletConnect relay
-            // 2. Subscribe to session events
-            // 3. On transaction response:
-            //    - Extract correlation_id from the request metadata
-            //    - Format result string (tx hash or rejection reason)
-            //    - Call self.callback_registry.resolve(correlation_id, result, &self.inject_tx)
-            // 4. On session disconnect/expiry:
-            //    - Update self.session.set_status(SessionStatus::Expired)
-            //    - Reconnect with backoff if appropriate
+            tracing::info!("WalletConnect listener started");
 
             loop {
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-                if self.session.is_paired().await {
-                    tracing::trace!("WalletConnect listener heartbeat - session active");
+                match self.session.poll_event().await {
+                    Some(event) => self.handle_event(event).await,
+                    None => {
+                        // No active client or no event ready — back off briefly.
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
                 }
             }
         })
+    }
+
+    async fn handle_event(&self, event: Event) {
+        match event {
+            Event::Connected => {
+                tracing::info!("WalletConnect: wallet connected");
+                self.session.update_from_connected().await;
+            }
+            Event::Disconnected => {
+                tracing::info!("WalletConnect: wallet disconnected");
+                self.session.set_status(SessionStatus::Disconnected).await;
+            }
+            Event::AccountsChanged(accounts) => {
+                tracing::info!("WalletConnect: accounts changed: {accounts:?}");
+                let chain_id = self.session.active_chain_id().await.unwrap_or(1);
+                self.session.update_accounts(chain_id).await;
+            }
+            Event::ChainIdChanged(new_chain_id) => {
+                tracing::info!("WalletConnect: chain changed to {new_chain_id}");
+                self.session.update_accounts(new_chain_id).await;
+            }
+            Event::Broken => {
+                tracing::warn!("WalletConnect: connection broken");
+                self.session.set_status(SessionStatus::Disconnected).await;
+            }
+        }
     }
 }

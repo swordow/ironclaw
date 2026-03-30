@@ -183,6 +183,9 @@ readabilityrs = { version = "0.1.2", optional = true }
 ed25519-dalek = { version = "2.2.0", features = ["std"] }
 hex = "0.4.3"
 
+# WalletConnect v2 client for Ethereum transaction approval
+walletconnect-client = { git = "https://github.com/zmanian/walletconnect-client.git", branch = "main", default-features = false, features = ["native"] }
+
 # OpenClaw import (feature gated)
 json5 = { version = "0.4", optional = true }
 
